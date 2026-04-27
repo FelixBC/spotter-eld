@@ -1,0 +1,20 @@
+# Spotter ELD — Cursor conventions
+
+- **Source of truth:** Read [docs/BRIEF.md](docs/BRIEF.md), [docs/HOS_RULES.md](docs/HOS_RULES.md), and [docs/API_CONTRACT.md](docs/API_CONTRACT.md) before implementing features or APIs.
+
+## Frontend
+
+- **Stack:** React 18, Vite, **TypeScript** (strict).
+- **Styling:** Tailwind CSS — prefer **core utilities**; avoid one-off arbitrary values unless necessary.
+- **Components:** Use **shadcn/ui** for UI primitives.
+- **Maps:** Use **Leaflet** for maps — **not** Google Maps.
+- **Data fetching:** **TanStack Query** for server state and API calls.
+- **Structure:** Keep components **under ~200 lines**, **one main component per file**, **named exports** (not default exports for shared components unless a file is a route entry).
+- **Types:** TypeScript **strict** mode; avoid `any` unless justified in a short comment.
+- **Forms:** **React Hook Form** with **Zod** for validation schemas.
+
+## Git
+
+- Commit messages: **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, etc.).
+- **Always ask the user before `git commit`.**
+- **Never run `git push`** from the agent.
