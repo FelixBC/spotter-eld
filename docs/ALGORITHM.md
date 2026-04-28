@@ -33,3 +33,16 @@ High-level pseudocode for turning trip inputs into a compliant timeline, route, 
 - **Timezone boundaries:** Midnight rollover and DST transitions must not corrupt day boundaries on log sheets.
 - **Short legs / urban routing:** Very short driving segments should still respect minimum dwell and break sequencing without oscillation.
 - **Missing or ambiguous addresses:** Validation fails before routing; partial coordinates use documented defaults or errors only as specified in the API.
+
+## Algorithm Design Decisions
+
+### Grilling Session — April 28, 2026
+
+1. 30-minute break counter tracks cumulative driving minutes only (driving_minutes_since_break). Increments on DRIVING status exclusively. Resets only on a qualifying break: 30+ consecutive minutes of OFF_DUTY, SLEEPER_BERTH, or ON_DUTY_NOT_DRIVING. Completely independent from the 11-hour and 14-hour counters.
+2. Sleeper-berth split (7/3) is out of scope. Every HOS reset is a full 10 consecutive hours off-duty. Document as known limitation in ALGORITHM.md, README trade-offs, and Loom walkthrough.
+3. Cycle balance is a flat number. remaining = 70 - cycle_hours_used, constant for the trip. No per-day falloff modeling. Document as known limitation — rolling window requires historical data the API doesn't accept.
+4. Mid-leg splits use linear interpolation. split_leg(leg, drive_minutes_remaining) → (partial_leg, remainder_leg). Loop invariant: check all remaining capacities before consuming any leg segment, split at the tightest constraint, insert mandatory event, resume with remainder.
+5. 14-hour window starts at trip_start_time. window_end = trip_start_time + 14h. All on-duty time (driving and not-driving) counts against it. Pickup and dropoff dwells consume window time.
+6. Coincident stops merge locations, never duty statuses. Proximity threshold: 50 miles or 1 hour. Fuel stop advances to break location. Sequence: BREAK first (satisfies HOS), FUEL second (separate ON_DUTY_NOT_DRIVING event). miles_since_fuel resets after the fuel event only.
+7. Log sheet day boundaries use a fixed home terminal timezone. HOME_TERMINAL_TZ = "America/Chicago" hardcoded for assessment. Never switches as truck moves. Document as known limitation — production would accept home_terminal_timezone as optional API input.
+8. Exactly one 34-hour restart is modeled. When cycle balance hits zero: insert 34-hour OFF_DUTY block, reset cycle hours to 0, reset daily driving hours, reset window_start to restart end time, continue. If trip still infeasible after one restart, return hos_infeasible violation. Multiple restarts are out of scope.
