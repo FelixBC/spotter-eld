@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest simulator/tests/test_rules.py -v)",
+      "Bash(pip install *)",
+      "Bash(python -m pytest simulator/tests/ -v)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}
