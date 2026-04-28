@@ -6,7 +6,7 @@ This document lists numbered constraints used by the trip planner and simulator.
 
 1. **11-hour driving limit:** A driver may drive at most 11 hours after coming on duty following 10 consecutive hours off duty before requiring another off-duty reset.
 2. **14-hour on-duty window:** A driver may not drive after the 14th consecutive hour after coming on duty following 10 consecutive hours off duty, even if some time was off-duty or in the sleeper berth within that window (subject to sleeper-berth provisions where applicable).
-3. **30-minute break:** A driver who has driven 8 cumulative hours without at least a 30-minute off-duty or sleeper-berth break may not drive until that break is taken.
+3. **30-minute break:** A driver who has driven 8 cumulative hours without at least 30 consecutive minutes of non-driving time (OFF_DUTY, SLEEPER_BERTH, or ON_DUTY_NOT_DRIVING) may not drive until that break is taken. The break must be consecutive — short non-consecutive periods cannot be combined to reach 30 minutes. (FMCSA 395.3(a)(3)(ii), HOS Guide April 2022 p.10)
 
 ## Cycle Limits
 
