@@ -52,6 +52,12 @@ function MapBounds({ points }: { points: [number, number][] }) {
   return null;
 }
 
+const TYPE_PRIORITY: Record<MarkerType, number> = {
+  milestone: 3,
+  stop: 2,
+  driving: 1,
+};
+
 function markerType(event: TimelineEvent): MarkerType {
   const remark = event.remark.toLowerCase();
   if (remark.includes("pickup") || remark.includes("dropoff")) return "milestone";
@@ -64,14 +70,16 @@ export function RouteMap({ events }: RouteMapProps) {
     const deduped = new Map<string, LocationMarker>();
     events.forEach((event, index) => {
       if (event.lat === 0 && event.lng === 0) return;
-      if (!deduped.has(event.location)) {
+      const type = markerType(event);
+      const existing = deduped.get(event.location);
+      if (!existing || TYPE_PRIORITY[type] > TYPE_PRIORITY[existing.type]) {
         deduped.set(event.location, {
           key: `${event.location}-${index}`,
           location: event.location,
           remark: event.remark,
           lat: event.lat,
           lng: event.lng,
-          type: markerType(event),
+          type,
         });
       }
     });
