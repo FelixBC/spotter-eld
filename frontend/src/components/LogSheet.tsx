@@ -11,30 +11,47 @@ const statusRows: Array<{ key: DutyStatus; label: string; color: string }> = [
   { key: "on_duty", label: "On Duty (Not Driving)", color: "bg-yellow-400" },
 ];
 
-function minuteOfDay(value: string): number {
-  const date = new Date(value);
-  return date.getHours() * 60 + date.getMinutes();
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
+/**
+ * Extract minutes-of-day from an ISO 8601 string by reading the T##:## part
+ * directly, bypassing any browser timezone conversion. The backend always
+ * serializes timestamps in America/Chicago local time, so this gives the
+ * correct Chicago clock value regardless of where the browser is running.
+ */
+function minuteOfDay(isoString: string): number {
+  const match = isoString.match(/T(\d{2}):(\d{2})/);
+  if (match) {
+    return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+  }
+  // Unreachable in practice; fall back to local-time parse if format is unexpected.
+  const d = new Date(isoString);
+  return d.getHours() * 60 + d.getMinutes();
 }
 
 function buildDaySlots(logSheet: LogSheetType): DutyStatus[] {
   const slots: DutyStatus[] = Array.from({ length: 96 }, () => "off_duty");
 
-  logSheet.events.forEach((event) => {
-    const startMinute = minuteOfDay(event.start_time);
-    const rawEndMinute = minuteOfDay(event.end_time);
-    const normalizedEnd = rawEndMinute <= startMinute ? rawEndMinute + 1440 : rawEndMinute;
-    const endMinute = Math.max(startMinute + 1, normalizedEnd);
-    const startSlot = clamp(Math.floor(startMinute / 15), 0, 95);
-    const endSlot = clamp(Math.ceil(endMinute / 15), 0, 96);
-
-    for (let slot = startSlot; slot < endSlot; slot += 1) {
-      slots[slot] = event.status;
-    }
+  // Pre-compute each event's [startMinute, endMinute) in Chicago local time.
+  // Events that cross midnight are clamped to [0, 1440).
+  const boundaries = logSheet.events.map((event) => {
+    const start = minuteOfDay(event.start_time);
+    const rawEnd = minuteOfDay(event.end_time);
+    // If rawEnd <= start the event crosses midnight; cap at 1440 (end of day).
+    const end = rawEnd <= start ? 1440 : Math.max(start + 1, rawEnd);
+    return { status: event.status, start, end };
   });
+
+  // For each 15-minute slot, find the first event whose window covers it.
+  // Events are chronological and non-overlapping, so the first match is correct.
+  for (let slot = 0; slot < 96; slot++) {
+    const slotStart = slot * 15;
+    const slotMid = slotStart + 7; // use slot midpoint to avoid rounding edge cases
+    for (const ev of boundaries) {
+      if (ev.start <= slotMid && slotMid < ev.end) {
+        slots[slot] = ev.status;
+        break;
+      }
+    }
+  }
 
   return slots;
 }
