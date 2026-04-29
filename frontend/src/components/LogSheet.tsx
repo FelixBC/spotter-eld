@@ -56,6 +56,11 @@ function totalsFromSlots(slots: DutyStatus[]): Record<DutyStatus, number> {
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
+const HOUR_LABELS: string[] = [
+  "Mid-\nnght", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11",
+  "Noon",       "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11",
+];
+
 export function LogSheet({ logSheet }: LogSheetProps) {
   const slots = buildDaySlots(logSheet);
   const totals = totalsFromSlots(slots);
@@ -80,7 +85,7 @@ export function LogSheet({ logSheet }: LogSheetProps) {
 
       {/* Fluid layout: 24 hour bands × 4 fifteen-minute ticks — fits container width, no horizontal scroll */}
       <div className="w-full max-w-full overflow-hidden rounded border border-gray-300">
-        <div className="flex min-h-[22px] border-b border-gray-300 bg-black text-[9px] font-semibold uppercase leading-none text-white">
+        <div className="flex min-h-[22px] border-b border-gray-300 bg-black text-[9px] font-semibold leading-none text-white">
           <div className="flex w-[5.25rem] shrink-0 items-center justify-center border-r border-gray-600 px-0.5 py-1">
             Status
           </div>
@@ -88,11 +93,17 @@ export function LogSheet({ logSheet }: LogSheetProps) {
             {HOURS.map((hour) => (
               <div
                 key={hour}
-                className="flex min-w-0 flex-1 items-center justify-center border-r border-gray-600 py-1 last:border-r-0"
+                className={`flex min-w-0 flex-1 items-center justify-center whitespace-pre-line border-r border-gray-600 py-0.5 text-center leading-tight ${
+                  hour === 0 || hour === 12 ? "text-[8px] font-bold text-yellow-300" : ""
+                }`}
               >
-                {hour}
+                {HOUR_LABELS[hour]}
               </div>
             ))}
+            {/* Right midnight boundary marker */}
+            <div className="flex w-[2.2ch] shrink-0 items-center justify-center whitespace-pre-line border-l border-gray-600 py-0.5 text-center text-[8px] font-bold leading-tight text-yellow-300">
+              {"Mid-\nnght"}
+            </div>
           </div>
           <div className="flex w-14 shrink-0 items-center justify-center border-l border-gray-600 px-0.5 py-1">
             Hrs
