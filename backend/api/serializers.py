@@ -16,6 +16,8 @@ class TimelineEventSerializer(serializers.Serializer):
     remark = serializers.CharField()
     truck_moved = serializers.BooleanField()
     duration_hours = serializers.FloatField()
+    lat = serializers.FloatField()
+    lng = serializers.FloatField()
 
     def get_status(self, obj):
         return obj.status.value

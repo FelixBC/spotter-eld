@@ -1,7 +1,7 @@
 """Geocoding and routing via OpenRouteService. Falls back to mock when ORS_API_KEY is unset."""
 
-import os
 import requests
+from decouple import config
 
 _ORS_BASE = "https://api.openrouteservice.org"
 _MILES_PER_METER = 0.000621371
@@ -16,7 +16,8 @@ _MOCK_ROUTE = {
 
 
 def _api_key() -> str | None:
-    return os.environ.get("ORS_API_KEY")
+    key = config("ORS_API_KEY", default="").strip()
+    return key or None
 
 
 def geocode_address(address: str) -> tuple[float, float]:
@@ -24,16 +25,22 @@ def geocode_address(address: str) -> tuple[float, float]:
     key = _api_key()
     if not key:
         return _MOCK_COORD
-
-    resp = requests.get(
-        f"{_ORS_BASE}/geocode/search",
-        params={"api_key": key, "text": address, "size": 1},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    coords = resp.json()["features"][0]["geometry"]["coordinates"]
-    # ORS returns [lng, lat]
-    return (coords[1], coords[0])
+    try:
+        resp = requests.get(
+            f"{_ORS_BASE}/geocode/search",
+            params={"api_key": key, "text": address, "size": 1},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        features = resp.json().get("features", [])
+        if not features:
+            raise ValueError(f"No geocoding results for address: {address}")
+        coords = features[0]["geometry"]["coordinates"]
+        # ORS returns [lng, lat]
+        return (coords[1], coords[0])
+    except Exception as exc:
+        print(f"ORS geocoding failed for '{address}': {exc}. Falling back to mock.")
+        return _MOCK_COORD
 
 
 def get_route(
@@ -51,27 +58,44 @@ def get_route(
             "duration_hours": _MOCK_ROUTE["duration_hours"],
             "coordinates": [origin, destination],
         }
-
-    # ORS directions expects [lng, lat]
-    body = {
-        "coordinates": [
-            [origin[1], origin[0]],
-            [destination[1], destination[0]],
-        ]
-    }
-    resp = requests.post(
-        f"{_ORS_BASE}/v2/directions/driving-hgv/json",
-        json=body,
-        headers={"Authorization": key},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    summary = resp.json()["routes"][0]["summary"]
-    raw_coords = resp.json()["routes"][0]["geometry"]["coordinates"]
-    # Convert [lng, lat] pairs to (lat, lng) tuples
-    coords = [(c[1], c[0]) for c in raw_coords]
-    return {
-        "distance_miles": summary["distance"] * _MILES_PER_METER,
-        "duration_hours": summary["duration"] / _SECONDS_PER_HOUR,
-        "coordinates": coords,
-    }
+    try:
+        # ORS directions expects [lng, lat]
+        body = {
+            "coordinates": [
+                [origin[1], origin[0]],
+                [destination[1], destination[0]],
+            ]
+        }
+        resp = requests.post(
+            f"{_ORS_BASE}/v2/directions/driving-hgv",
+            json=body,
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        route = resp.json()["routes"][0]
+        summary = route["summary"]
+        geometry = route.get("geometry")
+        coords: list[tuple[float, float]]
+        if isinstance(geometry, dict) and "coordinates" in geometry:
+            raw_coords = geometry["coordinates"]
+            # Convert [lng, lat] pairs to (lat, lng) tuples
+            coords = [(c[1], c[0]) for c in raw_coords]
+        else:
+            # Some ORS responses return encoded polyline geometry.
+            # Keep route usable with summary values if full geometry isn't available.
+            coords = [origin, destination]
+        return {
+            "distance_miles": summary["distance"] * _MILES_PER_METER,
+            "duration_hours": summary["duration"] / _SECONDS_PER_HOUR,
+            "coordinates": coords,
+        }
+    except Exception as exc:
+        print(
+            f"ORS routing failed from {origin} to {destination}: {exc}. Falling back to mock."
+        )
+        return {
+            "distance_miles": _MOCK_ROUTE["distance_miles"],
+            "duration_hours": _MOCK_ROUTE["duration_hours"],
+            "coordinates": [origin, destination],
+        }

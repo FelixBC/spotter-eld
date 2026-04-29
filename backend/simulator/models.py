@@ -40,6 +40,8 @@ class TimelineEvent:
     remark: str
     truck_moved: bool
     duration_hours: float
+    lat: float = 0.0
+    lng: float = 0.0
 
 
 @dataclass

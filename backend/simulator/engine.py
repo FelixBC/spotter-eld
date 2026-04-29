@@ -75,6 +75,7 @@ def _add_event(
     location: str,
     remark: str,
     truck_moved: bool = False,
+    coords: tuple[float, float] = (0.0, 0.0),
 ) -> datetime:
     """Append event to timeline, return end time."""
     end = start + timedelta(hours=duration_hours)
@@ -86,6 +87,8 @@ def _add_event(
         remark=remark,
         truck_moved=truck_moved,
         duration_hours=duration_hours,
+        lat=coords[0],
+        lng=coords[1],
     ))
     return end
 
@@ -100,6 +103,7 @@ def _insert_mandatory_rest(
     current_time: datetime,
     location: str,
     violations: list[str],
+    coords: tuple[float, float] = (0.0, 0.0),
 ) -> tuple[datetime, SimulationState]:
     """
     Insert the appropriate mandatory rest based on which limit was hit.
@@ -115,7 +119,7 @@ def _insert_mandatory_rest(
         # 34-hour restart
         end_time = _add_event(
             timeline, DutyStatus.OFF_DUTY, current_time,
-            RESTART_HOURS, location, "34-hour restart (cycle reset)"
+            RESTART_HOURS, location, "34-hour restart (cycle reset)", coords=coords,
         )
         state = apply_34h_restart(state, end_time)
         return end_time, state
@@ -123,7 +127,7 @@ def _insert_mandatory_rest(
     # Standard 10-hour reset
     end_time = _add_event(
         timeline, DutyStatus.OFF_DUTY, current_time,
-        RESET_OFF_DUTY_HOURS, location, "10-hour rest reset"
+        RESET_OFF_DUTY_HOURS, location, "10-hour rest reset", coords=coords,
     )
     state = apply_10h_reset(state, end_time)
     return end_time, state
@@ -134,15 +138,15 @@ def _insert_break(
     state: SimulationState,
     current_time: datetime,
     location: str,
+    coords: tuple[float, float] = (0.0, 0.0),
 ) -> tuple[datetime, SimulationState]:
     """Insert a 30-minute qualifying break and reset the break counter."""
     duration_hours = QUALIFYING_BREAK_MINUTES / 60.0
     end_time = _add_event(
         timeline, DutyStatus.OFF_DUTY, current_time,
-        duration_hours, location, "30-minute break (HOS Rule 3)"
+        duration_hours, location, "30-minute break (HOS Rule 3)", coords=coords,
     )
     state = apply_qualifying_break(state, QUALIFYING_BREAK_MINUTES)
-    # Also count this non-driving time against the window (it already does — window_end stays fixed)
     return end_time, state
 
 
@@ -151,14 +155,14 @@ def _insert_fuel_stop(
     state: SimulationState,
     current_time: datetime,
     location: str,
+    coords: tuple[float, float] = (0.0, 0.0),
 ) -> tuple[datetime, SimulationState]:
     """Insert a 1-hour ON_DUTY fuel stop and reset the fuel counter."""
     end_time = _add_event(
         timeline, DutyStatus.ON_DUTY, current_time,
-        FUEL_STOP_HOURS, location, "Fuel stop"
+        FUEL_STOP_HOURS, location, "Fuel stop", coords=coords,
     )
     state.miles_since_fuel = 0.0
-    # Fuel stop is on-duty time; counts against cycle and window
     state.cycle_hours_used += FUEL_STOP_HOURS
     return end_time, state
 
@@ -194,6 +198,7 @@ def _simulate_leg(
             break_needed = avail_break <= 0.001
             rest_needed = avail_11h <= 0.001 or avail_window <= 0.001 or avail_cycle <= 0.001
             fuel_needed = avail_fuel <= 0.001
+            stop_coords = remaining_leg.start_coords
 
             # Check coincident stop merge: if fuel is needed very soon after a break
             if break_needed and not rest_needed:
@@ -203,20 +208,20 @@ def _simulate_leg(
                 fuel_miles_remaining = FUEL_INTERVAL_MILES - state.miles_since_fuel
                 if fuel_miles_remaining - miles_after_break <= MERGE_PROXIMITY_MILES:
                     # Merge: take break then fuel at same location
-                    current_time, state = _insert_break(timeline, state, current_time, remaining_leg.start_location)
-                    current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location)
+                    current_time, state = _insert_break(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
+                    current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
                     continue
 
             if break_needed and not rest_needed:
-                current_time, state = _insert_break(timeline, state, current_time, remaining_leg.start_location)
+                current_time, state = _insert_break(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
             elif rest_needed:
                 current_time, state = _insert_mandatory_rest(
-                    timeline, state, current_time, remaining_leg.start_location, violations
+                    timeline, state, current_time, remaining_leg.start_location, violations, coords=stop_coords,
                 )
                 if "hos_infeasible" in " ".join(violations):
                     return current_time, state
             elif fuel_needed:
-                current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location)
+                current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
             continue
 
         if remaining_leg.duration_minutes <= minutes_available:
@@ -227,6 +232,7 @@ def _simulate_leg(
                 drive_hours, remaining_leg.end_location,
                 f"Driving to {remaining_leg.end_location}",
                 truck_moved=True,
+                coords=remaining_leg.end_coords,
             )
             state.driving_hours_today += drive_hours
             state.driving_minutes_since_break += int(remaining_leg.duration_minutes)
@@ -243,6 +249,7 @@ def _simulate_leg(
                 drive_hours, partial.end_location,
                 f"Driving to {partial.end_location}",
                 truck_moved=True,
+                coords=partial.end_coords,
             )
             state.driving_hours_today += drive_hours
             state.driving_minutes_since_break += int(partial.duration_minutes)
@@ -263,29 +270,30 @@ def _simulate_leg(
             fuel_hit = avail_fuel <= 0.001
             break_hit = avail_break <= 0.001
             rest_hit = avail_11h <= 0.001 or avail_window <= 0.001 or avail_cycle <= 0.001
+            stop_coords = remaining_leg.start_coords
 
             if fuel_hit and break_hit:
                 # Coincident: break then fuel
-                current_time, state = _insert_break(timeline, state, current_time, remaining_leg.start_location)
-                current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location)
+                current_time, state = _insert_break(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
+                current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
             elif fuel_hit and rest_hit:
                 # Rest first, then fuel
                 current_time, state = _insert_mandatory_rest(
-                    timeline, state, current_time, remaining_leg.start_location, violations
+                    timeline, state, current_time, remaining_leg.start_location, violations, coords=stop_coords,
                 )
                 if "hos_infeasible" in " ".join(violations):
                     return current_time, state
-                current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location)
+                current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
             elif break_hit:
-                current_time, state = _insert_break(timeline, state, current_time, remaining_leg.start_location)
+                current_time, state = _insert_break(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
             elif rest_hit:
                 current_time, state = _insert_mandatory_rest(
-                    timeline, state, current_time, remaining_leg.start_location, violations
+                    timeline, state, current_time, remaining_leg.start_location, violations, coords=stop_coords,
                 )
                 if "hos_infeasible" in " ".join(violations):
                     return current_time, state
             elif fuel_hit:
-                current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location)
+                current_time, state = _insert_fuel_stop(timeline, state, current_time, remaining_leg.start_location, coords=stop_coords)
 
     return current_time, state
 
@@ -384,7 +392,8 @@ def simulate_trip(trip_input: TripInput) -> TripPlanResult:
     pre_trip_hours = PRE_TRIP_MINUTES / 60.0
     current_time = _add_event(
         timeline, DutyStatus.ON_DUTY, current_time,
-        pre_trip_hours, trip_input.current_location, "Pre-trip inspection"
+        pre_trip_hours, trip_input.current_location, "Pre-trip inspection",
+        coords=current_coords,
     )
     state.cycle_hours_used += pre_trip_hours
 
@@ -394,7 +403,8 @@ def simulate_trip(trip_input: TripInput) -> TripPlanResult:
     # 6. Pickup (1h ON_DUTY)
     current_time = _add_event(
         timeline, DutyStatus.ON_DUTY, current_time,
-        PICKUP_DROPOFF_HOURS, trip_input.pickup_location, "Pickup"
+        PICKUP_DROPOFF_HOURS, trip_input.pickup_location, "Pickup",
+        coords=pickup_coords,
     )
     state.cycle_hours_used += PICKUP_DROPOFF_HOURS
     state = apply_qualifying_break(state, PICKUP_DROPOFF_HOURS * 60)
@@ -405,7 +415,8 @@ def simulate_trip(trip_input: TripInput) -> TripPlanResult:
     # 8. Dropoff (1h ON_DUTY)
     current_time = _add_event(
         timeline, DutyStatus.ON_DUTY, current_time,
-        PICKUP_DROPOFF_HOURS, trip_input.dropoff_location, "Dropoff"
+        PICKUP_DROPOFF_HOURS, trip_input.dropoff_location, "Dropoff",
+        coords=dropoff_coords,
     )
     state.cycle_hours_used += PICKUP_DROPOFF_HOURS
 
