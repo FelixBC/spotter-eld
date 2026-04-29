@@ -22,6 +22,34 @@ function parseError(error: unknown): string {
   );
 }
 
+function Spinner() {
+  return (
+    <svg
+      className="h-10 w-10 animate-spin text-blue-500"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      />
+    </svg>
+  );
+}
+
+function LoadingPlaceholder({ label }: { label: string }) {
+  return (
+    <div className="flex h-96 flex-col items-center justify-center gap-3 rounded-xl bg-white shadow-lg">
+      <Spinner />
+      <p className="text-sm font-medium text-gray-500">{label}</p>
+    </div>
+  );
+}
+
 export function PlannerPage() {
   const [result, setResult] = useState<TripPlanResponse | null>(null);
 
@@ -29,6 +57,8 @@ export function PlannerPage() {
     mutationFn: planTrip,
     onSuccess: (data) => setResult(data),
   });
+
+  const isLoading = mutation.isPending;
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 text-gray-900">
@@ -43,11 +73,13 @@ export function PlannerPage() {
         <section className="grid gap-6 lg:grid-cols-2">
           <TripInputForm
             onSubmit={(data: TripPlanRequest) => mutation.mutate(data)}
-            isLoading={mutation.isPending}
+            isLoading={isLoading}
             errorMessage={mutation.isError ? parseError(mutation.error) : undefined}
           />
 
-          {result ? (
+          {isLoading ? (
+            <LoadingPlaceholder label="Calculating route…" />
+          ) : result ? (
             <RouteMap events={result.timeline} />
           ) : (
             <div className="flex h-96 items-center justify-center rounded-xl bg-white shadow-lg">
@@ -56,7 +88,12 @@ export function PlannerPage() {
           )}
         </section>
 
-        {result ? (
+        {isLoading ? (
+          <div className="space-y-6">
+            <LoadingPlaceholder label="Building timeline…" />
+            <LoadingPlaceholder label="Generating ELD log sheets…" />
+          </div>
+        ) : result ? (
           <>
             <TimelineView logSheets={result.log_sheets} />
             <section className="space-y-6">
