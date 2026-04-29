@@ -53,9 +53,9 @@ function MapBounds({ points }: { points: [number, number][] }) {
 }
 
 function markerType(event: TimelineEvent): MarkerType {
-  const text = `${event.remark} ${event.location}`.toLowerCase();
-  if (text.includes("pickup") || text.includes("dropoff")) return "milestone";
-  if (text.includes("break") || text.includes("rest") || event.status === "off_duty") return "stop";
+  const remark = event.remark.toLowerCase();
+  if (remark.includes("pickup") || remark.includes("dropoff")) return "milestone";
+  if (remark.includes("break") || remark.includes("rest")) return "stop";
   return "driving";
 }
 
