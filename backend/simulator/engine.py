@@ -421,7 +421,7 @@ def simulate_trip(trip_input: TripInput) -> TripPlanResult:
 
     # 4. Pre-trip inspection (15 min ON_DUTY)
     # Skip if cycle already exhausted — restart must happen first
-    if minutes_until_cycle_limit(state) > 0:
+    if minutes_until_cycle_limit(state) >= PRE_TRIP_MINUTES:
         pre_trip_hours = PRE_TRIP_MINUTES / 60.0
         current_time = _add_event(
             timeline, DutyStatus.ON_DUTY, current_time,
