@@ -1,5 +1,6 @@
 """Core HOS trip simulation engine."""
 
+from dataclasses import replace
 from datetime import datetime, timedelta, date
 from collections import defaultdict
 
@@ -307,12 +308,42 @@ def get_log_sheet_date(utc_time: datetime) -> date:
     return utc_time.astimezone(HOME_TERMINAL_TZ).date()
 
 
+def split_event_at_midnight(event: TimelineEvent) -> list[TimelineEvent]:
+    """
+    Split a TimelineEvent into one segment per calendar day it spans.
+    Example: 34h OFF_DUTY starting Apr 30 06:15 AM becomes:
+      - Apr 30: 06:15 AM -> midnight  (17.75h)
+      - May  1: midnight -> midnight  (24.00h)
+      - May  2: midnight -> 08:15 AM  ( 8.25h)
+    Each segment inherits all fields from parent. duration_hours recalculated.
+    """
+    segments: list[TimelineEvent] = []
+    current_start = event.start_time
+
+    while current_start < event.end_time:
+        next_midnight = (current_start + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        segment_end = min(next_midnight, event.end_time)
+        duration = (segment_end - current_start).total_seconds() / 3600.0
+        segments.append(replace(
+            event,
+            start_time=current_start,
+            end_time=segment_end,
+            duration_hours=duration,
+        ))
+        current_start = segment_end
+
+    return segments if segments else [event]
+
+
 def _build_log_sheets(timeline: list[TimelineEvent]) -> list[LogSheet]:
     """Group timeline events into per-day LogSheet objects."""
     by_date: dict[date, list[TimelineEvent]] = defaultdict(list)
     for event in timeline:
-        day = get_log_sheet_date(event.start_time)
-        by_date[day].append(event)
+        for sub_event in split_event_at_midnight(event):
+            day = get_log_sheet_date(sub_event.start_time)
+            by_date[day].append(sub_event)
 
     sheets: list[LogSheet] = []
     for day in sorted(by_date):
@@ -389,13 +420,15 @@ def simulate_trip(trip_input: TripInput) -> TripPlanResult:
     current_time = now
 
     # 4. Pre-trip inspection (15 min ON_DUTY)
-    pre_trip_hours = PRE_TRIP_MINUTES / 60.0
-    current_time = _add_event(
-        timeline, DutyStatus.ON_DUTY, current_time,
-        pre_trip_hours, trip_input.current_location, "Pre-trip inspection",
-        coords=current_coords,
-    )
-    state.cycle_hours_used += pre_trip_hours
+    # Skip if cycle already exhausted — restart must happen first
+    if minutes_until_cycle_limit(state) > 0:
+        pre_trip_hours = PRE_TRIP_MINUTES / 60.0
+        current_time = _add_event(
+            timeline, DutyStatus.ON_DUTY, current_time,
+            pre_trip_hours, trip_input.current_location, "Pre-trip inspection",
+            coords=current_coords,
+        )
+        state.cycle_hours_used += pre_trip_hours
 
     # 5. Simulate leg 1 (current → pickup)
     current_time, state = _simulate_leg(leg1, timeline, state, current_time, violations)

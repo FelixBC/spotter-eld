@@ -21,7 +21,7 @@ def _api_key() -> str | None:
 
 
 def geocode_address(address: str) -> tuple[float, float]:
-    """Return (lat, lng). Falls back to mock if ORS_API_KEY is not set."""
+    """Return (lat, lng). Falls back to mock only if ORS_API_KEY is not set."""
     key = _api_key()
     if not key:
         return _MOCK_COORD
@@ -39,8 +39,11 @@ def geocode_address(address: str) -> tuple[float, float]:
         # ORS returns [lng, lat]
         return (coords[1], coords[0])
     except Exception as exc:
-        print(f"ORS geocoding failed for '{address}': {exc}. Falling back to mock.")
-        return _MOCK_COORD
+        print(f"ORS geocoding error for '{address}': {exc}")
+        raise ValueError(
+            f"Could not geocode location '{address}'. "
+            f"Use format 'City, ST' e.g. 'Chicago, IL'"
+        )
 
 
 def get_route(
@@ -49,7 +52,7 @@ def get_route(
 ) -> dict:
     """
     Return routing dict with distance_miles, duration_hours, coordinates.
-    Falls back to mock if ORS_API_KEY is not set.
+    Falls back to mock only if ORS_API_KEY is not set.
     """
     key = _api_key()
     if not key:
@@ -91,11 +94,8 @@ def get_route(
             "coordinates": coords,
         }
     except Exception as exc:
-        print(
-            f"ORS routing failed from {origin} to {destination}: {exc}. Falling back to mock."
+        print(f"ORS routing error from {origin} to {destination}: {exc}")
+        raise ValueError(
+            f"Could not compute route from {origin} to {destination}. "
+            f"Verify locations and try again."
         )
-        return {
-            "distance_miles": _MOCK_ROUTE["distance_miles"],
-            "duration_hours": _MOCK_ROUTE["duration_hours"],
-            "coordinates": [origin, destination],
-        }
