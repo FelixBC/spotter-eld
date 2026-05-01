@@ -19,6 +19,9 @@ interface TripInputFormProps {
   errorMessage?: string;
   pickedLocations?: Partial<Record<LocationType, PickedLocation>>;
   resetKey?: number;
+  highlightPlanTrip?: boolean;
+  highlightCycleHours?: boolean;
+  onCycleHoursInteracted?: () => void;
 }
 
 const LOCATION_FIELD: Record<LocationType, keyof FormValues> = {
@@ -33,6 +36,9 @@ export function TripInputForm({
   errorMessage,
   pickedLocations,
   resetKey,
+  highlightPlanTrip = false,
+  highlightCycleHours = false,
+  onCycleHoursInteracted,
 }: TripInputFormProps) {
   const {
     register,
@@ -72,6 +78,9 @@ export function TripInputForm({
     "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-blue-400 dark:focus:ring-blue-400/30";
   const labelClass =
     "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400";
+  const shouldGuidePlanTrip = highlightPlanTrip && !isLoading;
+  const shouldGuideCycleHours = highlightCycleHours && !isLoading;
+  const cycleHoursField = register("cycle_hours_used", { valueAsNumber: true });
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -118,14 +127,25 @@ export function TripInputForm({
           )}
         </div>
 
-        <div>
+        <div
+          className={
+            shouldGuideCycleHours
+              ? "animate-pulse rounded-lg ring-2 ring-blue-400/80 ring-offset-2 ring-offset-white dark:ring-blue-500/70 dark:ring-offset-gray-800"
+              : ""
+          }
+        >
           <label className={labelClass}>Cycle Hours Used</label>
           <input
             type="number"
             step="0.1"
             min={0}
             max={70}
-            {...register("cycle_hours_used", { valueAsNumber: true })}
+            {...cycleHoursField}
+            onFocus={() => onCycleHoursInteracted?.()}
+            onChange={(event) => {
+              cycleHoursField.onChange(event);
+              onCycleHoursInteracted?.();
+            }}
             className={inputClass}
           />
           <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
@@ -139,7 +159,11 @@ export function TripInputForm({
         <button
           type="submit"
           disabled={isLoading}
-          className="group flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:shadow-sm dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-gray-800"
+          className={`group flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:shadow-sm dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-gray-800 ${
+            shouldGuidePlanTrip
+              ? "animate-pulse ring-4 ring-blue-300/70 ring-offset-2 ring-offset-white dark:ring-blue-500/40 dark:ring-offset-gray-800"
+              : ""
+          }`}
         >
           {isLoading ? (
             <>

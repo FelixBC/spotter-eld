@@ -5,10 +5,10 @@ interface LogSheetProps {
 }
 
 const statusRows: Array<{ key: DutyStatus; label: string; color: string }> = [
-  { key: "off_duty", label: "Off Duty", color: "bg-gray-300" },
-  { key: "sleeper_berth", label: "Sleeper Berth", color: "bg-purple-400" },
+  { key: "off_duty", label: "Off Duty", color: "bg-slate-400" },
+  { key: "sleeper_berth", label: "Sleeper Berth", color: "bg-purple-500" },
   { key: "driving", label: "Driving", color: "bg-blue-500" },
-  { key: "on_duty", label: "On Duty (Not Driving)", color: "bg-yellow-400" },
+  { key: "on_duty", label: "On Duty (Not Driving)", color: "bg-amber-400" },
 ];
 
 /**
@@ -25,6 +25,42 @@ function minuteOfDay(isoString: string): number {
   // Unreachable in practice; fall back to local-time parse if format is unexpected.
   const d = new Date(isoString);
   return d.getHours() * 60 + d.getMinutes();
+}
+
+interface DaySegment {
+  status: DutyStatus;
+  start: number;
+  end: number;
+}
+
+function formatClock(minute: number): string {
+  const hours24 = Math.floor(minute / 60) % 24;
+  const minutes = minute % 60;
+  const period = hours24 >= 12 ? "PM" : "AM";
+  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  return `${hours12}:${minutes.toString().padStart(2, "0")} ${period}`;
+}
+
+function formatDuration(minutes: number): string {
+  const hrs = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) return `${hrs}h`;
+  return `${hrs}h ${mins}m`;
+}
+
+function segmentTitle(label: string, start: number, end: number): string {
+  const startLabel = start === 0 ? "Midnight" : formatClock(start);
+  const endLabel = end === 24 * 60 ? "Midnight" : formatClock(end);
+  return `${label}: ${startLabel} - ${endLabel} (${formatDuration(end - start)})`;
+}
+
+function buildDaySegments(logSheet: LogSheetType): DaySegment[] {
+  return logSheet.events.map((event) => {
+    const start = minuteOfDay(event.start_time);
+    const rawEnd = minuteOfDay(event.end_time);
+    const end = rawEnd <= start ? 24 * 60 : Math.max(start + 1, rawEnd);
+    return { status: event.status, start, end };
+  });
 }
 
 function buildDaySlots(logSheet: LogSheetType): DutyStatus[] {
@@ -79,6 +115,7 @@ const HOUR_LABELS: string[] = [
 ];
 
 export function LogSheet({ logSheet }: LogSheetProps) {
+  const segments = buildDaySegments(logSheet);
   const slots = buildDaySlots(logSheet);
   const totals = totalsFromSlots(slots);
   const remarks = logSheet.events.map((event) => `${event.remark} (${event.location})`);
@@ -177,22 +214,38 @@ export function LogSheet({ logSheet }: LogSheetProps) {
               {row.label}
             </div>
             <div className="flex min-w-0 flex-1">
-              {HOURS.map((hour) => (
-                <div key={hour} className="flex min-w-0 flex-1 border-r border-gray-300">
-                  {[0, 1, 2, 3].map((quarter) => {
-                    const slot = hour * 4 + quarter;
-                    const active = slots[slot] === row.key;
-                    return (
-                      <div
-                        key={quarter}
-                        className={`min-h-[14px] flex-1 border-r border-gray-200 last:border-r-0 ${
-                          active ? row.color : "bg-gray-100"
-                        }`}
-                      />
-                    );
-                  })}
+              <div className="relative min-w-0 flex-1">
+                <div className="flex min-w-0 flex-1">
+                  {HOURS.map((hour) => (
+                    <div key={hour} className="flex min-w-0 flex-1 border-r border-gray-300">
+                      {[0, 1, 2, 3].map((quarter) => (
+                        <div
+                          key={quarter}
+                          className="min-h-[14px] flex-1 border-r border-gray-200 bg-gray-100 last:border-r-0"
+                        />
+                      ))}
+                    </div>
+                  ))}
                 </div>
-              ))}
+
+                {/* Duty periods rendered as continuous overlays so each entire
+                    section can be hovered and emphasized as one visual block. */}
+                <div className="pointer-events-none absolute inset-0">
+                  {segments
+                    .filter((segment) => segment.status === row.key)
+                    .map((segment, index) => (
+                      <div
+                        key={`${row.key}-${segment.start}-${segment.end}-${index}`}
+                        className={`pointer-events-auto absolute bottom-0 top-0 cursor-pointer rounded-[1px] transition-all duration-200 hover:z-20 hover:scale-y-125 hover:shadow-sm ${row.color}`}
+                        style={{
+                          left: `${(segment.start / (24 * 60)) * 100}%`,
+                          width: `${((segment.end - segment.start) / (24 * 60)) * 100}%`,
+                        }}
+                        title={segmentTitle(row.label, segment.start, segment.end)}
+                      />
+                    ))}
+                </div>
+              </div>
               {/* Empty spacer matching the right "Mid-nght" header cell so the
                   24 hour columns stay perfectly aligned with the labels above. */}
               <div className="w-10 shrink-0 bg-white" aria-hidden="true" />

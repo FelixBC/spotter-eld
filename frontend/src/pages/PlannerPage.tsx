@@ -19,6 +19,17 @@ interface ApiErrorBody {
   error?: string;
 }
 
+type GuidanceStep =
+  | "set-cycle-hours"
+  | "set-start"
+  | "tap-map-start"
+  | "set-pickup"
+  | "tap-map-pickup"
+  | "set-dropoff"
+  | "tap-map-dropoff"
+  | "plan-trip"
+  | "done";
+
 function parseError(error: unknown): string {
   const axiosError = error as AxiosError<ApiErrorBody>;
   return (
@@ -93,6 +104,56 @@ function EmptyResults() {
   );
 }
 
+function WorkflowGuide({ step }: { step: GuidanceStep }) {
+  const steps = [
+    { id: "set-start", icon: "📍" },
+    { id: "tap-map-start", icon: "🗺️" },
+    { id: "set-pickup", icon: "🟢" },
+    { id: "tap-map-pickup", icon: "🗺️" },
+    { id: "set-dropoff", icon: "🔴" },
+    { id: "tap-map-dropoff", icon: "🗺️" },
+    { id: "set-cycle-hours", icon: "⏱️" },
+    { id: "plan-trip", icon: "✅" },
+  ] as const;
+  const activeIndex = steps.findIndex((item) => item.id === step);
+  const currentIndex = activeIndex === -1 ? steps.length : activeIndex;
+
+  return (
+    <section className="rounded-xl border border-blue-200/70 bg-blue-50/60 px-4 py-3 dark:border-blue-500/30 dark:bg-blue-500/10">
+      <div className="flex items-center justify-center gap-1.5 sm:gap-2.5">
+        {steps.map((item, index) => {
+          const complete = index < currentIndex;
+          const active = index === currentIndex;
+          return (
+            <div key={item.id} className="flex items-center gap-1.5 sm:gap-2.5">
+              <div
+                className={`flex h-8 w-8 items-center justify-center rounded-full border text-sm shadow-sm transition-all ${
+                  active
+                    ? "animate-pulse border-blue-500 bg-blue-600 text-white"
+                    : complete
+                      ? "border-emerald-500 bg-emerald-500 text-white"
+                      : "border-gray-300 bg-white text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                }`}
+                aria-hidden="true"
+              >
+                {complete ? "✓" : item.icon}
+              </div>
+              {index < steps.length - 1 ? (
+                <span
+                  className={`h-0.5 w-3 rounded-full sm:w-6 ${
+                    complete ? "bg-emerald-500" : "bg-gray-300 dark:bg-gray-600"
+                  }`}
+                  aria-hidden="true"
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export function PlannerPage() {
@@ -102,6 +163,7 @@ export function PlannerPage() {
     Partial<Record<LocationType, PickedLocation>>
   >({});
   const [resetKey, setResetKey] = useState(0);
+  const [cycleHoursInteracted, setCycleHoursInteracted] = useState(false);
 
   const mutation = useMutation({
     mutationFn: planTrip,
@@ -109,11 +171,40 @@ export function PlannerPage() {
   });
 
   const isLoading = mutation.isPending;
+  const needsCycleHoursStep = !cycleHoursInteracted;
+
+  const nextLocation: LocationType | null = !pickedLocations.current
+    ? "current"
+    : !pickedLocations.pickup
+      ? "pickup"
+      : !pickedLocations.dropoff
+        ? "dropoff"
+        : null;
+  const shouldClickMap = Boolean(nextLocation && pickingMode === nextLocation);
+  const guidedButton: LocationType | null = nextLocation && !shouldClickMap ? nextLocation : null;
+  const highlightCycleHours = !result && !nextLocation && needsCycleHoursStep && !isLoading;
+  const highlightPlanTrip = !result && !nextLocation && !needsCycleHoursStep && !isLoading;
+
+  let guidanceStep: GuidanceStep = "done";
+  if (!result) {
+    if (nextLocation === "current") {
+      guidanceStep = shouldClickMap ? "tap-map-start" : "set-start";
+    } else if (nextLocation === "pickup") {
+      guidanceStep = shouldClickMap ? "tap-map-pickup" : "set-pickup";
+    } else if (nextLocation === "dropoff") {
+      guidanceStep = shouldClickMap ? "tap-map-dropoff" : "set-dropoff";
+    } else if (needsCycleHoursStep) {
+      guidanceStep = "set-cycle-hours";
+    } else {
+      guidanceStep = "plan-trip";
+    }
+  }
 
   const handleReset = () => {
     setResult(null);
     setPickedLocations({});
     setPickingMode(null);
+    setCycleHoursInteracted(false);
     mutation.reset();
     setResetKey((k) => k + 1);
   };
@@ -194,6 +285,8 @@ export function PlannerPage() {
           </div>
         </header>
 
+        {!result ? <WorkflowGuide step={guidanceStep} /> : null}
+
         <section className="grid gap-6 lg:grid-cols-2">
           <TripInputForm
             onSubmit={handleSubmit}
@@ -201,6 +294,9 @@ export function PlannerPage() {
             errorMessage={mutation.isError ? parseError(mutation.error) : undefined}
             pickedLocations={pickedLocations}
             resetKey={resetKey}
+            highlightPlanTrip={highlightPlanTrip}
+            highlightCycleHours={highlightCycleHours}
+            onCycleHoursInteracted={() => setCycleHoursInteracted(true)}
           />
 
           {isLoading ? (
@@ -213,6 +309,8 @@ export function PlannerPage() {
               onModeChange={setPickingMode}
               onLocationPicked={handleLocationPicked}
               viewResetKey={resetKey}
+              guidedButton={guidedButton}
+              guideMapClick={shouldClickMap}
             />
           )}
         </section>

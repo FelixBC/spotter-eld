@@ -26,6 +26,8 @@ interface RouteMapProps {
   onModeChange?: (mode: LocationType | null) => void;
   onLocationPicked?: (type: LocationType, lat: number, lng: number) => void;
   viewResetKey?: number;
+  guidedButton?: LocationType | null;
+  guideMapClick?: boolean;
 }
 
 const PICKED_COLORS: Record<LocationType, string> = {
@@ -148,6 +150,8 @@ export function RouteMap({
   onModeChange,
   onLocationPicked,
   viewResetKey = 0,
+  guidedButton = null,
+  guideMapClick = false,
 }: RouteMapProps) {
   const pickerEnabled = Boolean(onModeChange && onLocationPicked);
   const pickedEntries = pickedLocations
@@ -205,6 +209,7 @@ export function RouteMap({
           <div className="flex flex-wrap items-center gap-2">
             {(["current", "pickup", "dropoff"] as LocationType[]).map((type) => {
               const active = pickingMode === type;
+              const guided = guidedButton === type;
               return (
                 <button
                   key={type}
@@ -214,6 +219,10 @@ export function RouteMap({
                     active
                       ? "border-blue-600 bg-blue-600 text-white shadow-sm dark:border-blue-400 dark:bg-blue-500"
                       : "border-gray-300 bg-white text-gray-700 hover:border-blue-400 hover:bg-blue-50/40 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:border-blue-400 dark:hover:bg-blue-500/10"
+                  } ${
+                    guided
+                      ? "animate-pulse ring-2 ring-blue-400 ring-offset-2 ring-offset-white dark:ring-blue-500/70 dark:ring-offset-gray-800"
+                      : ""
                   }`}
                 >
                   {type === "current"
@@ -240,9 +249,34 @@ export function RouteMap({
       ) : null}
 
       <div
-        className="h-96 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
+        className={`relative h-96 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 ${
+          guideMapClick
+            ? "animate-pulse ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-blue-500/70 dark:ring-offset-gray-800"
+            : ""
+        }`}
         style={{ cursor: pickingMode ? "crosshair" : "default" }}
       >
+        {guideMapClick ? (
+          <div className="pointer-events-none absolute inset-0 z-[500] flex items-center justify-center">
+            <div className="animate-bounce rounded-full border-2 border-blue-400 bg-blue-500/20 p-3 text-blue-700 shadow-md backdrop-blur-[1px] dark:border-blue-300 dark:bg-blue-400/20 dark:text-blue-200">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+                className="h-7 w-7"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 15.75L12 20.25m0 0l-3.75-4.5M12 20.25V3.75"
+                />
+              </svg>
+            </div>
+          </div>
+        ) : null}
         <MapContainer center={[39.5, -98.35]} zoom={4} className="h-full w-full">
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
