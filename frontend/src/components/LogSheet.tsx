@@ -1,4 +1,5 @@
 import type { DutyStatus, LogSheet as LogSheetType } from "../types/api";
+import { formatHM } from "../utils/formatDuration";
 
 interface LogSheetProps {
   logSheet: LogSheetType;
@@ -203,7 +204,7 @@ export function LogSheet({ logSheet }: LogSheetProps) {
               {"Mid-\nnght"}
             </div>
           </div>
-          <div className="flex w-14 shrink-0 items-center justify-center border-l border-gray-600 px-0.5 py-1">
+          <div className="flex w-20 shrink-0 items-center justify-center border-l border-gray-600 px-0.5 py-1">
             Hrs
           </div>
         </div>
@@ -250,8 +251,8 @@ export function LogSheet({ logSheet }: LogSheetProps) {
                   24 hour columns stay perfectly aligned with the labels above. */}
               <div className="w-10 shrink-0 bg-white" aria-hidden="true" />
             </div>
-            <div className="flex w-14 shrink-0 items-center justify-center border-l border-gray-300 px-0.5 py-0.5 text-[11px] font-semibold tabular-nums">
-              {totals[row.key].toFixed(2)}
+            <div className="flex w-20 shrink-0 items-center justify-center border-l border-gray-300 px-0.5 py-0.5 text-[10px] font-semibold">
+              {formatHM(totals[row.key])}
             </div>
           </div>
         ))}

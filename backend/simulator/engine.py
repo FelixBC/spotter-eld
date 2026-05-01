@@ -227,7 +227,17 @@ def _simulate_leg(
 
         if remaining_leg.duration_minutes <= minutes_available:
             # Consume whole remaining leg
-            drive_hours = remaining_leg.duration_minutes / 60.0
+            # Defensive clamp: enforce 11h cap at write-time as well, not only
+            # via precomputed availability, so no segment can overrun due to
+            # rounding or stale availability in edge paths.
+            drive_minutes = min(
+                remaining_leg.duration_minutes,
+                minutes_available,
+                minutes_until_11h_limit(state),
+            )
+            if drive_minutes <= 0.001:
+                continue
+            drive_hours = drive_minutes / 60.0
             end_time = _add_event(
                 timeline, DutyStatus.DRIVING, current_time,
                 drive_hours, remaining_leg.end_location,
@@ -236,14 +246,25 @@ def _simulate_leg(
                 coords=remaining_leg.end_coords,
             )
             state.driving_hours_today += drive_hours
-            state.driving_minutes_since_break += int(remaining_leg.duration_minutes)
+            state.driving_minutes_since_break += int(drive_minutes)
             state.cycle_hours_used += drive_hours
-            state.miles_since_fuel += remaining_leg.distance_miles
+            # Scale miles to the actual driven minutes when clamped.
+            if remaining_leg.duration_minutes > 0:
+                state.miles_since_fuel += remaining_leg.distance_miles * (
+                    drive_minutes / remaining_leg.duration_minutes
+                )
             current_time = end_time
-            break
+            # If we clamped to a partial segment, continue with remainder.
+            if drive_minutes >= remaining_leg.duration_minutes - 0.001:
+                break
+            _, remainder = split_leg(remaining_leg, drive_minutes)
+            remaining_leg = remainder
         else:
             # Split at tightest constraint
-            partial, remainder = split_leg(remaining_leg, minutes_available)
+            drive_minutes = min(minutes_available, minutes_until_11h_limit(state))
+            if drive_minutes <= 0.001:
+                continue
+            partial, remainder = split_leg(remaining_leg, drive_minutes)
             drive_hours = partial.duration_minutes / 60.0
             end_time = _add_event(
                 timeline, DutyStatus.DRIVING, current_time,
