@@ -85,40 +85,84 @@ export function LogSheet({ logSheet }: LogSheetProps) {
   const totalHours = statusRows.reduce((sum, row) => sum + totals[row.key], 0);
 
   return (
-    <section className="rounded-xl border border-gray-300 bg-white p-3 shadow-lg">
-      <h3 className="mb-2 text-lg font-semibold text-gray-900">Driver&apos;s Daily Log</h3>
-
-      <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-800">
-        <span>
-          <span className="font-semibold">Date:</span> {logSheet.date}
-        </span>
-        <span>
-          <span className="font-semibold">Carrier:</span> Spotter ELD
-        </span>
-        <span>
-          <span className="font-semibold">Total Miles:</span> {logSheet.total_miles.toFixed(1)}
-        </span>
+    <section className="rounded-xl border border-gray-300 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2 border-b border-gray-200 pb-2 dark:border-gray-700">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            Driver&apos;s Daily Log
+          </h3>
+          <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            (One per 24-hour period)
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-800 dark:text-gray-200">
+          <span>
+            <span className="font-semibold">Date:</span> {logSheet.date}
+          </span>
+          <span>
+            <span className="font-semibold">Carrier:</span> Spotter ELD
+          </span>
+          <span>
+            <span className="font-semibold">Total Miles:</span>{" "}
+            {logSheet.total_miles.toFixed(1)}
+          </span>
+        </div>
       </div>
 
-      {/* Fluid layout: 24 hour bands × 4 fifteen-minute ticks — fits container width, no horizontal scroll */}
-      <div className="w-full max-w-full overflow-hidden rounded border border-gray-300">
-        <div className="flex min-h-[22px] border-b border-gray-300 bg-black text-[9px] font-semibold leading-none text-white">
+      {/* FMCSA-style identification fields. Blank lines preserve the look of the
+          paper form; values are intentionally empty in this app. */}
+      <div className="mb-3 grid gap-2 text-[11px] text-gray-800 sm:grid-cols-2 dark:text-gray-200">
+        <div className="flex items-end gap-2 border-b border-gray-300 pb-0.5 dark:border-gray-600">
+          <span className="font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+            Driver:
+          </span>
+          <span className="flex-1">&nbsp;</span>
+        </div>
+        <div className="flex items-end gap-2 border-b border-gray-300 pb-0.5 dark:border-gray-600">
+          <span className="font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+            Co-Driver:
+          </span>
+          <span className="flex-1 text-gray-500 dark:text-gray-500">N/A</span>
+        </div>
+        <div className="flex items-end gap-2 border-b border-gray-300 pb-0.5 dark:border-gray-600">
+          <span className="font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+            Vehicle No:
+          </span>
+          <span className="flex-1">&nbsp;</span>
+        </div>
+        <div className="flex items-end gap-2 border-b border-gray-300 pb-0.5 dark:border-gray-600">
+          <span className="font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+            Trailer No:
+          </span>
+          <span className="flex-1">&nbsp;</span>
+        </div>
+      </div>
+
+      {/* Fluid layout: 24 hour bands × 4 fifteen-minute ticks — fits container
+          width, no horizontal scroll. The grid is intentionally anchored to a
+          white "paper" surface even in dark mode, matching the FMCSA paper
+          form — it sits inside the dark card like a printed sheet. */}
+      <div className="w-full max-w-full overflow-hidden rounded border border-gray-300 bg-white text-gray-900 dark:border-gray-600">
+        <div className="flex min-h-[24px] border-b border-gray-300 bg-black text-[10px] font-semibold leading-none text-white">
           <div className="flex w-[5.25rem] shrink-0 items-center justify-center border-r border-gray-600 px-0.5 py-1">
             Status
           </div>
+          {/* 24 hour-label cells matching the 24 hour columns in the data
+              rows below, plus a fixed-width "Mid-nght" boundary marker on the
+              right. The data rows have a matching empty spacer of the same
+              width so the 24 hour columns stay aligned with their labels. */}
           <div className="flex min-w-0 flex-1">
             {HOURS.map((hour) => (
               <div
                 key={hour}
                 className={`flex min-w-0 flex-1 items-center justify-center whitespace-pre-line border-r border-gray-600 py-0.5 text-center leading-tight ${
-                  hour === 0 || hour === 12 ? "text-[8px] font-bold text-yellow-300" : ""
+                  hour === 0 || hour === 12 ? "text-[9px] font-bold text-yellow-300" : ""
                 }`}
               >
                 {HOUR_LABELS[hour]}
               </div>
             ))}
-            {/* Right midnight boundary marker */}
-            <div className="flex w-[2.2ch] shrink-0 items-center justify-center whitespace-pre-line border-l border-gray-600 py-0.5 text-center text-[8px] font-bold leading-tight text-yellow-300">
+            <div className="flex w-10 shrink-0 items-center justify-center whitespace-pre-line py-0.5 text-center text-[9px] font-bold leading-tight text-yellow-300">
               {"Mid-\nnght"}
             </div>
           </div>
@@ -134,7 +178,7 @@ export function LogSheet({ logSheet }: LogSheetProps) {
             </div>
             <div className="flex min-w-0 flex-1">
               {HOURS.map((hour) => (
-                <div key={hour} className="flex min-w-0 flex-1 border-r border-gray-200 last:border-r-0">
+                <div key={hour} className="flex min-w-0 flex-1 border-r border-gray-300">
                   {[0, 1, 2, 3].map((quarter) => {
                     const slot = hour * 4 + quarter;
                     const active = slots[slot] === row.key;
@@ -149,6 +193,9 @@ export function LogSheet({ logSheet }: LogSheetProps) {
                   })}
                 </div>
               ))}
+              {/* Empty spacer matching the right "Mid-nght" header cell so the
+                  24 hour columns stay perfectly aligned with the labels above. */}
+              <div className="w-10 shrink-0 bg-white" aria-hidden="true" />
             </div>
             <div className="flex w-14 shrink-0 items-center justify-center border-l border-gray-300 px-0.5 py-0.5 text-[11px] font-semibold tabular-nums">
               {totals[row.key].toFixed(2)}
@@ -158,17 +205,27 @@ export function LogSheet({ logSheet }: LogSheetProps) {
       </div>
 
       <div className="mt-2 grid gap-2 md:grid-cols-[1fr_auto] md:items-start">
-        <div className="rounded border border-gray-300 px-2 py-1.5">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-700">Remarks</p>
-          <ul className="space-y-0.5 text-[11px] leading-snug text-gray-700">
+        <div className="rounded border border-gray-300 px-2 py-1.5 dark:border-gray-600 dark:bg-gray-900/40">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+            Remarks
+          </p>
+          <ul className="space-y-0.5 text-[11px] leading-snug text-gray-700 dark:text-gray-200">
             {remarks.map((remark, index) => (
               <li key={`${remark}-${index}`}>{remark}</li>
             ))}
           </ul>
         </div>
-        <div className="rounded border border-gray-300 px-2 py-1.5 text-[11px] md:min-w-[11rem]">
-          <p className="mb-1 font-semibold uppercase tracking-wide text-gray-700">Daily Check</p>
-          <p className={Math.abs(totalHours - 24) <= 0.25 ? "font-semibold text-green-700" : "font-semibold text-red-700"}>
+        <div className="rounded border border-gray-300 px-2 py-1.5 text-[11px] md:min-w-[11rem] dark:border-gray-600 dark:bg-gray-900/40">
+          <p className="mb-1 font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+            Daily Check
+          </p>
+          <p
+            className={
+              Math.abs(totalHours - 24) <= 0.25
+                ? "font-semibold text-green-700 dark:text-green-400"
+                : "font-semibold text-red-700 dark:text-red-400"
+            }
+          >
             Sum: {totalHours.toFixed(2)} / 24.00 h
           </p>
         </div>

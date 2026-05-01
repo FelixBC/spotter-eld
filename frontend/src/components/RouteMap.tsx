@@ -186,43 +186,61 @@ export function RouteMap({
   // Auto-fit only after a trip is planned. Pin drops must never move the map.
   const fitEnabled = events.length > 0;
 
+  const noPinsSet = pickedEntries.length === 0;
+  const noRoute = events.length === 0;
+
   return (
-    <div className="rounded-xl bg-white p-4 shadow-lg">
-      <h2 className="mb-3 text-xl font-semibold text-gray-900">Route Map</h2>
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div className="mb-3 flex items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-700">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Route Map</h2>
+        {events.length > 0 ? (
+          <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+            Route planned
+          </span>
+        ) : null}
+      </div>
 
       {pickerEnabled ? (
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          {(["current", "pickup", "dropoff"] as LocationType[]).map((type) => {
-            const active = pickingMode === type;
-            return (
-              <button
-                key={type}
-                type="button"
-                onClick={() => onModeChange?.(active ? null : type)}
-                className={`rounded border px-3 py-1 text-xs font-medium transition-colors ${
-                  active
-                    ? "border-blue-600 bg-blue-600 text-white"
-                    : "border-gray-300 bg-white text-gray-700 hover:border-blue-400"
-                }`}
-              >
-                {type === "current"
-                  ? "📍 Set Start"
-                  : type === "pickup"
-                    ? "🟢 Set Pickup"
-                    : "🔴 Set Dropoff"}
-              </button>
-            );
-          })}
-          {pickingMode ? (
-            <span className="self-center text-xs text-blue-600">
-              Click the map to set {pickingMode} location
-            </span>
+        <div className="mb-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {(["current", "pickup", "dropoff"] as LocationType[]).map((type) => {
+              const active = pickingMode === type;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => onModeChange?.(active ? null : type)}
+                  className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    active
+                      ? "border-blue-600 bg-blue-600 text-white shadow-sm dark:border-blue-400 dark:bg-blue-500"
+                      : "border-gray-300 bg-white text-gray-700 hover:border-blue-400 hover:bg-blue-50/40 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:border-blue-400 dark:hover:bg-blue-500/10"
+                  }`}
+                >
+                  {type === "current"
+                    ? "📍 Set Start"
+                    : type === "pickup"
+                      ? "🟢 Set Pickup"
+                      : "🔴 Set Dropoff"}
+                </button>
+              );
+            })}
+            {pickingMode ? (
+              <span className="self-center text-xs font-medium text-blue-600 dark:text-blue-300">
+                Click the map to set {pickingMode} location
+              </span>
+            ) : null}
+          </div>
+          {!pickingMode && noPinsSet && noRoute ? (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Click the buttons above to set locations on the map, or type city
+              names in the form.
+            </p>
           ) : null}
         </div>
       ) : null}
 
       <div
-        className="h-96 overflow-hidden rounded-lg border border-gray-200"
+        className="h-96 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
         style={{ cursor: pickingMode ? "crosshair" : "default" }}
       >
         <MapContainer center={[39.5, -98.35]} zoom={4} className="h-full w-full">

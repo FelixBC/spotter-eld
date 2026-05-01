@@ -16,4 +16,19 @@ body,
     Helvetica,
     Arial,
     sans-serif;
+  /* Match the in-app slate background so the area outside the React root
+     and the first paint never flash white when the theme is dark. */
+  background-color: rgb(248 250 252); /* slate-50 */
+  color: rgb(17 24 39); /* gray-900 */
+}
+
+html.dark,
+html.dark body,
+html.dark #app {
+  background-color: rgb(15 23 42); /* slate-900 */
+  color: rgb(243 244 246); /* gray-100 */
+}
+
+html.dark {
+  color-scheme: dark;
 }
