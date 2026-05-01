@@ -1,6 +1,5 @@
-from django.urls import path
-from api.views import TripPlanView
+from django.urls import path, include
 
 urlpatterns = [
-    path("api/trip/plan/", TripPlanView.as_view()),
+    path("api/", include("api.urls")),
 ]
