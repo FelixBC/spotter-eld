@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import type { AxiosError } from "axios";
+import axios, { type AxiosError } from "axios";
 import { TripInputForm } from "../components/TripInputForm";
 import { RouteMap } from "../components/RouteMap";
 import { TimelineView } from "../components/TimelineView";
 import { LogSheet } from "../components/LogSheet";
 import { planTrip } from "../lib/api";
-import type { TripPlanRequest, TripPlanResponse } from "../types/api";
+import type {
+  LocationType,
+  PickedLocation,
+  TripPlanRequest,
+  TripPlanResponse,
+} from "../types/api";
 
 interface ApiErrorBody {
   message?: string;
@@ -50,8 +55,14 @@ function LoadingPlaceholder({ label }: { label: string }) {
   );
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 export function PlannerPage() {
   const [result, setResult] = useState<TripPlanResponse | null>(null);
+  const [pickingMode, setPickingMode] = useState<LocationType | null>(null);
+  const [pickedLocations, setPickedLocations] = useState<
+    Partial<Record<LocationType, PickedLocation>>
+  >({});
 
   const mutation = useMutation({
     mutationFn: planTrip,
@@ -59,6 +70,44 @@ export function PlannerPage() {
   });
 
   const isLoading = mutation.isPending;
+
+  const handleLocationPicked = async (type: LocationType, lat: number, lng: number) => {
+    let label = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    try {
+      const res = await axios.get<{ label: string }>(`${API_BASE}/api/geocode/reverse/`, {
+        params: { lat, lng },
+      });
+      if (res.data?.label) {
+        label = res.data.label;
+      }
+    } catch {
+      // Network/lookup failed — keep the lat/lng fallback label set above.
+    }
+    setPickedLocations((prev) => ({ ...prev, [type]: { lat, lng, label } }));
+    setPickingMode(null);
+  };
+
+  const handleSubmit = (formData: TripPlanRequest) => {
+    const enrichedData: TripPlanRequest = {
+      ...formData,
+      ...(pickedLocations.current && {
+        current_lat: pickedLocations.current.lat,
+        current_lng: pickedLocations.current.lng,
+        current_location: pickedLocations.current.label,
+      }),
+      ...(pickedLocations.pickup && {
+        pickup_lat: pickedLocations.pickup.lat,
+        pickup_lng: pickedLocations.pickup.lng,
+        pickup_location: pickedLocations.pickup.label,
+      }),
+      ...(pickedLocations.dropoff && {
+        dropoff_lat: pickedLocations.dropoff.lat,
+        dropoff_lng: pickedLocations.dropoff.lng,
+        dropoff_location: pickedLocations.dropoff.label,
+      }),
+    };
+    mutation.mutate(enrichedData);
+  };
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 text-gray-900">
@@ -72,19 +121,22 @@ export function PlannerPage() {
 
         <section className="grid gap-6 lg:grid-cols-2">
           <TripInputForm
-            onSubmit={(data: TripPlanRequest) => mutation.mutate(data)}
+            onSubmit={handleSubmit}
             isLoading={isLoading}
             errorMessage={mutation.isError ? parseError(mutation.error) : undefined}
+            pickedLocations={pickedLocations}
           />
 
           {isLoading ? (
             <LoadingPlaceholder label="Calculating route…" />
-          ) : result ? (
-            <RouteMap events={result.timeline} />
           ) : (
-            <div className="flex h-96 items-center justify-center rounded-xl bg-white shadow-lg">
-              <p className="text-gray-500">Route map will render after planning a trip.</p>
-            </div>
+            <RouteMap
+              events={result?.timeline ?? []}
+              pickingMode={pickingMode}
+              pickedLocations={pickedLocations}
+              onModeChange={setPickingMode}
+              onLocationPicked={handleLocationPicked}
+            />
           )}
         </section>
 

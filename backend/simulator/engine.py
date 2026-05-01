@@ -373,15 +373,23 @@ def _build_log_sheets(timeline: list[TimelineEvent]) -> list[LogSheet]:
 # Main simulation entry point
 # ---------------------------------------------------------------------------
 
-def simulate_trip(trip_input: TripInput) -> TripPlanResult:
+def simulate_trip(
+    trip_input: TripInput,
+    current_coords_override: tuple[float, float] | None = None,
+    pickup_coords_override: tuple[float, float] | None = None,
+    dropoff_coords_override: tuple[float, float] | None = None,
+) -> TripPlanResult:
     """
     Given TripInput, geocode locations, build routes, simulate HOS-compliant
     timeline, and return TripPlanResult.
+
+    If coordinate overrides are provided (e.g. from a map click), they bypass
+    forward geocoding for that specific location while leaving the others alone.
     """
-    # 1. Geocode
-    current_coords = geocode_address(trip_input.current_location)
-    pickup_coords = geocode_address(trip_input.pickup_location)
-    dropoff_coords = geocode_address(trip_input.dropoff_location)
+    # 1. Geocode (use override when caller already has known coordinates)
+    current_coords = current_coords_override or geocode_address(trip_input.current_location)
+    pickup_coords = pickup_coords_override or geocode_address(trip_input.pickup_location)
+    dropoff_coords = dropoff_coords_override or geocode_address(trip_input.dropoff_location)
 
     # 2. Routes
     route1 = get_route(current_coords, pickup_coords)

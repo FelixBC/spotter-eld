@@ -6,6 +6,13 @@ class TripPlanRequestSerializer(serializers.Serializer):
     pickup_location = serializers.CharField(min_length=1)
     dropoff_location = serializers.CharField(min_length=1)
     cycle_hours_used = serializers.FloatField(min_value=0.0, max_value=70.0)
+    # Optional coordinate overrides (set via map click on the frontend).
+    current_lat = serializers.FloatField(required=False, allow_null=True)
+    current_lng = serializers.FloatField(required=False, allow_null=True)
+    pickup_lat = serializers.FloatField(required=False, allow_null=True)
+    pickup_lng = serializers.FloatField(required=False, allow_null=True)
+    dropoff_lat = serializers.FloatField(required=False, allow_null=True)
+    dropoff_lng = serializers.FloatField(required=False, allow_null=True)
 
 
 class TimelineEventSerializer(serializers.Serializer):

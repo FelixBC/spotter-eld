@@ -1,7 +1,8 @@
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import type { TripPlanRequest } from "../types/api";
+import type { LocationType, PickedLocation, TripPlanRequest } from "../types/api";
 
 const schema = z.object({
   current_location: z.string().min(1, "Required"),
@@ -16,11 +17,24 @@ interface TripInputFormProps {
   onSubmit: (data: TripPlanRequest) => void;
   isLoading: boolean;
   errorMessage?: string;
+  pickedLocations?: Partial<Record<LocationType, PickedLocation>>;
 }
 
-export function TripInputForm({ onSubmit, isLoading, errorMessage }: TripInputFormProps) {
+const LOCATION_FIELD: Record<LocationType, keyof FormValues> = {
+  current: "current_location",
+  pickup: "pickup_location",
+  dropoff: "dropoff_location",
+};
+
+export function TripInputForm({
+  onSubmit,
+  isLoading,
+  errorMessage,
+  pickedLocations,
+}: TripInputFormProps) {
   const {
     register,
+    setValue,
     handleSubmit,
     formState: { errors },
   } = useForm<FormValues>({
@@ -32,6 +46,18 @@ export function TripInputForm({ onSubmit, isLoading, errorMessage }: TripInputFo
       cycle_hours_used: 0,
     },
   });
+
+  // Sync picked-label values from the map into the corresponding text input
+  // so map-only flows still satisfy the form's required-string validation.
+  useEffect(() => {
+    if (!pickedLocations) return;
+    (Object.entries(pickedLocations) as Array<[LocationType, PickedLocation | undefined]>)
+      .forEach(([type, picked]) => {
+        if (picked) {
+          setValue(LOCATION_FIELD[type], picked.label, { shouldValidate: true });
+        }
+      });
+  }, [pickedLocations, setValue]);
 
   return (
     <div className="rounded-xl bg-white p-6 shadow-lg">

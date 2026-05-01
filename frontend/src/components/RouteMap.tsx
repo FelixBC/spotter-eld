@@ -1,8 +1,16 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useMemo } from "react";
-import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
-import type { TimelineEvent } from "../types/api";
+import {
+  MapContainer,
+  Marker,
+  Polyline,
+  Popup,
+  TileLayer,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
+import type { LocationType, PickedLocation, TimelineEvent } from "../types/api";
 
 delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -13,6 +21,49 @@ L.Icon.Default.mergeOptions({
 
 interface RouteMapProps {
   events: TimelineEvent[];
+  pickingMode?: LocationType | null;
+  pickedLocations?: Partial<Record<LocationType, PickedLocation>>;
+  onModeChange?: (mode: LocationType | null) => void;
+  onLocationPicked?: (type: LocationType, lat: number, lng: number) => void;
+}
+
+const PICKED_COLORS: Record<LocationType, string> = {
+  current: "#2563eb",
+  pickup: "#16a34a",
+  dropoff: "#dc2626",
+};
+
+const PICKED_LABELS: Record<LocationType, string> = {
+  current: "Start",
+  pickup: "Pickup",
+  dropoff: "Dropoff",
+};
+
+function buildPickedIcon(type: LocationType): L.DivIcon {
+  const color = PICKED_COLORS[type];
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:22px;height:22px;border-radius:9999px;background:${color};border:3px solid white;box-shadow:0 0 0 2px rgba(0,0,0,.25)"></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
+
+function MapClickHandler({
+  mode,
+  onPick,
+}: {
+  mode: LocationType | null;
+  onPick: (lat: number, lng: number) => void;
+}) {
+  useMapEvents({
+    click(e) {
+      if (mode) {
+        onPick(e.latlng.lat, e.latlng.lng);
+      }
+    },
+  });
+  return null;
 }
 
 type MarkerType = "driving" | "stop" | "milestone";
@@ -65,7 +116,19 @@ function markerType(event: TimelineEvent): MarkerType {
   return "driving";
 }
 
-export function RouteMap({ events }: RouteMapProps) {
+export function RouteMap({
+  events,
+  pickingMode = null,
+  pickedLocations,
+  onModeChange,
+  onLocationPicked,
+}: RouteMapProps) {
+  const pickerEnabled = Boolean(onModeChange && onLocationPicked);
+  const pickedEntries = pickedLocations
+    ? (Object.entries(pickedLocations) as Array<[LocationType, PickedLocation | undefined]>)
+        .filter(([, v]) => v !== undefined)
+    : [];
+
   const markers = useMemo(() => {
     const deduped = new Map<string, LocationMarker>();
     events.forEach((event, index) => {
@@ -95,12 +158,56 @@ export function RouteMap({ events }: RouteMapProps) {
   );
 
   const points: [number, number][] = markers.map((m) => [m.lat, m.lng]);
-  const boundsPoints = routeCoordinates.length > 0 ? routeCoordinates : points;
+  const pickedPoints: [number, number][] = pickedEntries
+    .filter((entry): entry is [LocationType, PickedLocation] => entry[1] !== undefined)
+    .map(([, p]) => [p.lat, p.lng]);
+  const boundsPoints =
+    routeCoordinates.length > 0
+      ? routeCoordinates
+      : points.length > 0
+        ? points
+        : pickedPoints;
 
   return (
     <div className="rounded-xl bg-white p-4 shadow-lg">
       <h2 className="mb-3 text-xl font-semibold text-gray-900">Route Map</h2>
-      <div className="h-96 overflow-hidden rounded-lg border border-gray-200">
+
+      {pickerEnabled ? (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          {(["current", "pickup", "dropoff"] as LocationType[]).map((type) => {
+            const active = pickingMode === type;
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => onModeChange?.(active ? null : type)}
+                className={`rounded border px-3 py-1 text-xs font-medium transition-colors ${
+                  active
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-gray-300 bg-white text-gray-700 hover:border-blue-400"
+                }`}
+              >
+                {type === "current"
+                  ? "📍 Set Start"
+                  : type === "pickup"
+                    ? "🟢 Set Pickup"
+                    : "🔴 Set Dropoff"}
+              </button>
+            );
+          })}
+          {pickingMode ? (
+            <span className="self-center text-xs text-blue-600">
+              Click the map to set {pickingMode} location
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div
+        className={`h-96 overflow-hidden rounded-lg border border-gray-200 ${
+          pickingMode ? "cursor-crosshair" : ""
+        }`}
+      >
         <MapContainer center={[39.5, -98.35]} zoom={4} className="h-full w-full">
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -126,6 +233,32 @@ export function RouteMap({ events }: RouteMapProps) {
               </Popup>
             </Marker>
           ))}
+          {pickedEntries.map(([type, picked]) =>
+            picked ? (
+              <Marker
+                key={`picked-${type}`}
+                position={[picked.lat, picked.lng]}
+                icon={buildPickedIcon(type)}
+              >
+                <Popup>
+                  <div className="text-sm">
+                    <p className="font-semibold">{PICKED_LABELS[type]}</p>
+                    <p className="text-gray-600">{picked.label}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            ) : null,
+          )}
+          {pickerEnabled ? (
+            <MapClickHandler
+              mode={pickingMode}
+              onPick={(lat, lng) => {
+                if (pickingMode && onLocationPicked) {
+                  onLocationPicked(pickingMode, lat, lng);
+                }
+              }}
+            />
+          ) : null}
           <MapBounds points={boundsPoints} />
         </MapContainer>
       </div>

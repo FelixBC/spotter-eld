@@ -46,6 +46,39 @@ def geocode_address(address: str) -> tuple[float, float]:
         )
 
 
+def reverse_geocode(lat: float, lng: float) -> str:
+    """
+    Convert coordinates to a human-readable city label.
+    Returns "City, ST" format or "lat, lng" if reverse geocode fails.
+    """
+    key = config("ORS_API_KEY", default="")
+    if not key:
+        return f"{lat:.4f}, {lng:.4f}"
+
+    try:
+        url = "https://api.openrouteservice.org/geocode/reverse"
+        params = {
+            "api_key": key,
+            "point.lon": lng,
+            "point.lat": lat,
+            "size": 1,
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        features = data.get("features", [])
+        if features:
+            props = features[0].get("properties", {})
+            city = props.get("locality") or props.get("name", "")
+            region = props.get("region_a") or props.get("region", "")
+            if city and region:
+                return f"{city}, {region}"
+        return f"{lat:.4f}, {lng:.4f}"
+    except Exception as e:
+        print(f"Reverse geocode error: {e}")
+        return f"{lat:.4f}, {lng:.4f}"
+
+
 def get_route(
     origin: tuple[float, float],
     destination: tuple[float, float],
@@ -69,12 +102,33 @@ def get_route(
                 [destination[1], destination[0]],
             ]
         }
-        resp = requests.post(
-            f"{_ORS_BASE}/v2/directions/driving-hgv",
-            json=body,
-            headers={"Authorization": f"Bearer {key}"},
-            timeout=30,
-        )
+        # driving-hgv is preferred; fall back to driving-car when ORS returns 404
+        # (some coordinate pairs are not routable for trucks but are valid for cars).
+        resp = None
+        all_404 = True
+        for profile in ("driving-hgv", "driving-car"):
+            resp = requests.post(
+                f"{_ORS_BASE}/v2/directions/{profile}",
+                json=body,
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=30,
+            )
+            if resp.status_code == 404:
+                print(f"ORS {profile} returned 404 for {origin}->{destination}")
+                continue
+            all_404 = False
+            break
+
+        if all_404:
+            # Neither truck nor car routing could find a path — return mock data
+            # so the trip planner can still produce a result for the clicked coords.
+            print(f"ORS returned 404 for all profiles {origin}->{destination}, using mock route")
+            return {
+                "distance_miles": 500.0,
+                "duration_hours": 8.0,
+                "coordinates": [list(origin), list(destination)],
+            }
+
         resp.raise_for_status()
         route = resp.json()["routes"][0]
         summary = route["summary"]

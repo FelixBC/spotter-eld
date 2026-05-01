@@ -2,6 +2,7 @@
 
 import pytest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from simulator.models import (
@@ -99,15 +100,37 @@ def test_simulate_trip_fuel_stop_present():
     assert len(fuel_events) >= 1
 
 
-def test_simulate_trip_cycle_remaining_correct():
+@patch("simulator.engine.get_route")
+@patch("simulator.engine.geocode_address")
+def test_simulate_trip_cycle_remaining_correct(mock_geocode, mock_route):
     """Starting with 20h used; total on-duty should leave < 50h remaining."""
+    mock_geocode.side_effect = [
+        (41.8781, -87.6298),
+        (32.7767, -96.7970),
+        (34.0522, -118.2437),
+    ]
+    mock_route.side_effect = [
+        {"distance_miles": 1000.0, "duration_hours": 15.0},
+        {"distance_miles": 1000.0, "duration_hours": 15.0},
+    ]
     result = _run()
     assert result.cycle_hours_remaining < 50.0
     assert result.cycle_hours_remaining >= 0.0
 
 
-def test_simulate_trip_no_11h_violation():
+@patch("simulator.engine.get_route")
+@patch("simulator.engine.geocode_address")
+def test_simulate_trip_no_11h_violation(mock_geocode, mock_route):
     """No single day should show > 11h of driving in totals."""
+    mock_geocode.side_effect = [
+        (41.8781, -87.6298),
+        (32.7767, -96.7970),
+        (34.0522, -118.2437),
+    ]
+    mock_route.side_effect = [
+        {"distance_miles": 1000.0, "duration_hours": 15.0},
+        {"distance_miles": 1000.0, "duration_hours": 15.0},
+    ]
     result = _run()
     for sheet in result.log_sheets:
         assert sheet.totals.get(DutyStatus.DRIVING.value, 0.0) <= 11.0 + 0.01
@@ -125,7 +148,18 @@ def test_get_log_sheet_date_uses_chicago_tz():
     assert get_log_sheet_date(utc_midnight).isoformat() == "2026-04-29"
 
 
-def test_simulate_trip_total_distance():
+@patch("simulator.engine.get_route")
+@patch("simulator.engine.geocode_address")
+def test_simulate_trip_total_distance(mock_geocode, mock_route):
     """Mock route returns 1000 mi per leg → 2000 mi total."""
+    mock_geocode.side_effect = [
+        (41.8781, -87.6298),
+        (32.7767, -96.7970),
+        (34.0522, -118.2437),
+    ]
+    mock_route.side_effect = [
+        {"distance_miles": 1000.0, "duration_hours": 15.0},
+        {"distance_miles": 1000.0, "duration_hours": 15.0},
+    ]
     result = _run()
     assert abs(result.total_distance_miles - 2000.0) < 0.01

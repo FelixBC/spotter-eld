@@ -24,6 +24,20 @@ export interface TripPlanRequest {
   pickup_location: string;
   dropoff_location: string;
   cycle_hours_used: number;
+  current_lat?: number;
+  current_lng?: number;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  dropoff_lat?: number;
+  dropoff_lng?: number;
+}
+
+export type LocationType = "current" | "pickup" | "dropoff";
+
+export interface PickedLocation {
+  lat: number;
+  lng: number;
+  label: string;
 }
 
 export interface TripPlanResponse {
