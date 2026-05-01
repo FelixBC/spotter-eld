@@ -63,6 +63,7 @@ export function PlannerPage() {
   const [pickedLocations, setPickedLocations] = useState<
     Partial<Record<LocationType, PickedLocation>>
   >({});
+  const [resetKey, setResetKey] = useState(0);
 
   const mutation = useMutation({
     mutationFn: planTrip,
@@ -70,6 +71,14 @@ export function PlannerPage() {
   });
 
   const isLoading = mutation.isPending;
+
+  const handleReset = () => {
+    setResult(null);
+    setPickedLocations({});
+    setPickingMode(null);
+    mutation.reset();
+    setResetKey((k) => k + 1);
+  };
 
   const handleLocationPicked = async (type: LocationType, lat: number, lng: number) => {
     let label = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -125,6 +134,7 @@ export function PlannerPage() {
             isLoading={isLoading}
             errorMessage={mutation.isError ? parseError(mutation.error) : undefined}
             pickedLocations={pickedLocations}
+            resetKey={resetKey}
           />
 
           {isLoading ? (
@@ -136,6 +146,7 @@ export function PlannerPage() {
               pickedLocations={pickedLocations}
               onModeChange={setPickingMode}
               onLocationPicked={handleLocationPicked}
+              viewResetKey={resetKey}
             />
           )}
         </section>
@@ -147,6 +158,16 @@ export function PlannerPage() {
           </div>
         ) : result ? (
           <>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-700">Trip Results</h2>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 transition hover:border-red-400 hover:bg-red-50 hover:text-red-600"
+              >
+                ← Plan New Trip
+              </button>
+            </div>
             <TimelineView logSheets={result.log_sheets} />
             <section className="space-y-6">
               {result.log_sheets.map((sheet) => (

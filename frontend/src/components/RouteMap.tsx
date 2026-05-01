@@ -1,6 +1,6 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   MapContainer,
   Marker,
@@ -25,6 +25,7 @@ interface RouteMapProps {
   pickedLocations?: Partial<Record<LocationType, PickedLocation>>;
   onModeChange?: (mode: LocationType | null) => void;
   onLocationPicked?: (type: LocationType, lat: number, lng: number) => void;
+  viewResetKey?: number;
 }
 
 const PICKED_COLORS: Record<LocationType, string> = {
@@ -103,6 +104,16 @@ function MapBounds({ points }: { points: [number, number][] }) {
   return null;
 }
 
+function ResetView({ trigger }: { trigger: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (trigger > 0) {
+      map.setView([39.5, -98.35], 4);
+    }
+  }, [trigger, map]);
+  return null;
+}
+
 const TYPE_PRIORITY: Record<MarkerType, number> = {
   milestone: 3,
   stop: 2,
@@ -122,6 +133,7 @@ export function RouteMap({
   pickedLocations,
   onModeChange,
   onLocationPicked,
+  viewResetKey = 0,
 }: RouteMapProps) {
   const pickerEnabled = Boolean(onModeChange && onLocationPicked);
   const pickedEntries = pickedLocations
@@ -260,6 +272,7 @@ export function RouteMap({
             />
           ) : null}
           <MapBounds points={boundsPoints} />
+          <ResetView trigger={viewResetKey} />
         </MapContainer>
       </div>
     </div>

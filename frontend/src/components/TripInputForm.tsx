@@ -18,6 +18,7 @@ interface TripInputFormProps {
   isLoading: boolean;
   errorMessage?: string;
   pickedLocations?: Partial<Record<LocationType, PickedLocation>>;
+  resetKey?: number;
 }
 
 const LOCATION_FIELD: Record<LocationType, keyof FormValues> = {
@@ -31,10 +32,12 @@ export function TripInputForm({
   isLoading,
   errorMessage,
   pickedLocations,
+  resetKey,
 }: TripInputFormProps) {
   const {
     register,
     setValue,
+    reset,
     handleSubmit,
     formState: { errors },
   } = useForm<FormValues>({
@@ -46,6 +49,12 @@ export function TripInputForm({
       cycle_hours_used: 0,
     },
   });
+
+  // Reset the form when the parent signals a full clear.
+  useEffect(() => {
+    if (!resetKey) return;
+    reset();
+  }, [resetKey, reset]);
 
   // Sync picked-label values from the map into the corresponding text input
   // so map-only flows still satisfy the form's required-string validation.
