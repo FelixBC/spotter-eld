@@ -96,11 +96,25 @@ function buildIcon(type: MarkerType) {
   });
 }
 
-function MapBounds({ points }: { points: [number, number][] }) {
+function MapBounds({
+  points,
+  enabled,
+}: {
+  points: [number, number][];
+  enabled: boolean;
+}) {
   const map = useMap();
-  if (points.length > 0) {
-    map.fitBounds(points, { padding: [24, 24] });
-  }
+  // Stable string key: changes only when the actual route coordinates change.
+  // Using an empty string when disabled prevents fitBounds from firing on
+  // pin drops or picking-mode changes — only a new planned route triggers it.
+  const routeKey = enabled ? points.map((p) => p.join(",")).join("|") : "";
+  useEffect(() => {
+    if (enabled && points.length > 0) {
+      map.fitBounds(points, { padding: [24, 24] });
+    }
+    // routeKey is the stable proxy for points + enabled; map is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeKey, map]);
   return null;
 }
 
@@ -169,16 +183,8 @@ export function RouteMap({
     [events],
   );
 
-  const points: [number, number][] = markers.map((m) => [m.lat, m.lng]);
-  const pickedPoints: [number, number][] = pickedEntries
-    .filter((entry): entry is [LocationType, PickedLocation] => entry[1] !== undefined)
-    .map(([, p]) => [p.lat, p.lng]);
-  const boundsPoints =
-    routeCoordinates.length > 0
-      ? routeCoordinates
-      : points.length > 0
-        ? points
-        : pickedPoints;
+  // Auto-fit only after a trip is planned. Pin drops must never move the map.
+  const fitEnabled = events.length > 0;
 
   return (
     <div className="rounded-xl bg-white p-4 shadow-lg">
@@ -216,9 +222,8 @@ export function RouteMap({
       ) : null}
 
       <div
-        className={`h-96 overflow-hidden rounded-lg border border-gray-200 ${
-          pickingMode ? "cursor-crosshair" : ""
-        }`}
+        className="h-96 overflow-hidden rounded-lg border border-gray-200"
+        style={{ cursor: pickingMode ? "crosshair" : "default" }}
       >
         <MapContainer center={[39.5, -98.35]} zoom={4} className="h-full w-full">
           <TileLayer
@@ -271,7 +276,7 @@ export function RouteMap({
               }}
             />
           ) : null}
-          <MapBounds points={boundsPoints} />
+          <MapBounds points={routeCoordinates} enabled={fitEnabled} />
           <ResetView trigger={viewResetKey} />
         </MapContainer>
       </div>
