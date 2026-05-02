@@ -67,7 +67,10 @@ class SimulationState:
     window_start: datetime
     window_end: datetime
     driving_hours_today: float = 0.0
-    driving_minutes_since_break: int = 0
+    # Minutes driven since the last qualifying break. Kept as float so small
+    # clamped segments (e.g. after an 11h or 14h cap split) do not lose
+    # sub-minute time and silently delay the mandatory 30-min break.
+    driving_minutes_since_break: float = 0.0
     cycle_hours_used: float = 0.0
     miles_since_fuel: float = 0.0
     restart_used: bool = False

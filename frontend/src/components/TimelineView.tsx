@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { DutyStatus, LogSheet, TimelineEvent } from "../types/api";
 import { formatHM } from "../utils/formatDuration";
 
@@ -22,6 +23,13 @@ const statusLabels: Record<DutyStatus, string> = {
 const REST_STATUSES: DutyStatus[] = ["off_duty", "sleeper_berth"];
 const DAY_MINUTES = 24 * 60;
 const MIN_VISUAL_MINUTES = 15;
+const RESET_10H_MINUTES = 10 * 60;
+const RESTART_34H_MINUTES = 34 * 60;
+const DOT_11H_MINUTES = 11 * 60;
+
+function isRestStatus(status: DutyStatus): boolean {
+  return REST_STATUSES.includes(status);
+}
 
 function minuteOfDay(isoString: string): number {
   const match = isoString.match(/T(\d{2}):(\d{2})/);
@@ -47,70 +55,11 @@ function formatDuration(minutes: number): string {
   return `${hrs}h ${mins}m`;
 }
 
-function isRestStatus(status: DutyStatus): boolean {
-  return REST_STATUSES.includes(status);
-}
-
 function eventRange(event: TimelineEvent): { start: number; end: number } {
   const start = minuteOfDay(event.start_time);
   const endRaw = minuteOfDay(event.end_time);
   const end = endRaw <= start ? DAY_MINUTES : endRaw;
   return { start, end };
-}
-
-function trailingMidnightRestMinutes(sheet: LogSheet): number {
-  let total = 0;
-  let expectedEnd = DAY_MINUTES;
-
-  for (let index = sheet.events.length - 1; index >= 0; index -= 1) {
-    const event = sheet.events[index];
-    const { start, end } = eventRange(event);
-
-    // Only count a single contiguous block that directly touches midnight.
-    if (end !== expectedEnd || !isRestStatus(event.status)) break;
-
-    total += end - start;
-    expectedEnd = start;
-  }
-
-  return total;
-}
-
-function leadingMidnightRestMinutes(sheet: LogSheet): number {
-  let total = 0;
-  let expectedStart = 0;
-
-  for (const event of sheet.events) {
-    const { start, end } = eventRange(event);
-
-    // Only count a single contiguous block that begins at midnight.
-    if (start !== expectedStart || !isRestStatus(event.status)) break;
-
-    total += end - start;
-    expectedStart = end;
-  }
-
-  return total;
-}
-
-function boundaryContinuousRestMinutes(current: LogSheet, next: LogSheet): number {
-  const trailing = trailingMidnightRestMinutes(current);
-  const leading = leadingMidnightRestMinutes(next);
-
-  // A boundary-spanning continuous rest requires rest touching midnight
-  // on BOTH sides of the day boundary.
-  if (trailing === 0 || leading === 0) return 0;
-  return trailing + leading;
-}
-
-function restPillClasses(totalRestMinutes: number): string {
-  if (totalRestMinutes >= 34 * 60) {
-    return "border-green-200 bg-green-50 text-green-700 dark:border-green-500/40 dark:bg-green-500/10 dark:text-green-300";
-  }
-  if (totalRestMinutes >= 10 * 60) {
-    return "border-green-200 bg-green-50 text-green-700 dark:border-green-500/40 dark:bg-green-500/10 dark:text-green-300";
-  }
-  return "border-red-200 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300";
 }
 
 function dayRangePercent(start: string, end: string): { left: number; width: number } {
@@ -122,6 +71,185 @@ function dayRangePercent(start: string, end: string): { left: number; width: num
   return { left, width };
 }
 
+// ---------------------------------------------------------------------------
+// Single-source-of-truth HOS compliance analyzer
+// ---------------------------------------------------------------------------
+// Builds one chronologically-sorted event stream using REAL Date.parse
+// timestamps (not minute-of-day) and identifies maximal rest RUNS — sequences
+// of consecutive off-duty / sleeper-berth events where every event's
+// end_time exactly equals the next event's start_time (no gaps, no non-rest
+// interruptions). A run of >= 10h is a valid 10h reset per §395.3(a)(3)(i);
+// a run of >= 34h is a 34-hour restart per §395.3(c).
+//
+// Both the per-day "DOT 11h check" and the between-day "continuous rest /
+// 10h reset" pill read from the SAME run data, so the two indicators
+// mathematically cannot disagree.
+// ---------------------------------------------------------------------------
+
+interface EnrichedEvent {
+  day: string;
+  event: TimelineEvent;
+  startMs: number;
+  endMs: number;
+  durationMinutes: number;
+}
+
+interface RestRun {
+  startMs: number;
+  endMs: number;
+  totalMinutes: number;
+}
+
+interface ComplianceMetrics {
+  // Max "driving minutes accumulated since the last qualifying 10h reset"
+  // that occurs at any point during the named day. Used for the DOT 11h check.
+  drivingMaxByDay: Map<string, number>;
+  // For the day N → day N+1 pill: total minutes of the single contiguous rest
+  // run that strictly spans the midnight between N and N+1. 0 if the boundary
+  // is not inside a rest run.
+  boundaryRestByDay: Map<string, number>;
+}
+
+function buildStream(logSheets: LogSheet[]): EnrichedEvent[] {
+  const stream: EnrichedEvent[] = [];
+  for (const sheet of logSheets) {
+    for (const event of sheet.events) {
+      const startMs = Date.parse(event.start_time);
+      const endMs = Date.parse(event.end_time);
+      if (Number.isNaN(startMs) || Number.isNaN(endMs)) continue;
+      stream.push({
+        day: sheet.date,
+        event,
+        startMs,
+        endMs,
+        durationMinutes: Math.max(0, (endMs - startMs) / 60000),
+      });
+    }
+  }
+  stream.sort((a, b) => a.startMs - b.startMs);
+  return stream;
+}
+
+function detectRestRuns(stream: EnrichedEvent[]): RestRun[] {
+  const runs: RestRun[] = [];
+  let startMs: number | null = null;
+  let endMs = 0;
+  let minutes = 0;
+
+  const flush = () => {
+    if (startMs !== null) {
+      runs.push({ startMs, endMs, totalMinutes: minutes });
+    }
+    startMs = null;
+    endMs = 0;
+    minutes = 0;
+  };
+
+  for (const item of stream) {
+    if (!isRestStatus(item.event.status)) {
+      flush();
+      continue;
+    }
+    // A rest run extends only if the prior event ends at exactly the same
+    // timestamp this event starts at — no gap, no overlap. Uses full
+    // datetime equality (Date.parse ms), not minute-of-day equality, so
+    // cross-midnight splits merge cleanly.
+    if (startMs !== null && item.startMs === endMs) {
+      endMs = item.endMs;
+      minutes += item.durationMinutes;
+    } else {
+      flush();
+      startMs = item.startMs;
+      endMs = item.endMs;
+      minutes = item.durationMinutes;
+    }
+  }
+  flush();
+  return runs;
+}
+
+function computeCompliance(logSheets: LogSheet[]): ComplianceMetrics {
+  const stream = buildStream(logSheets);
+  const runs = detectRestRuns(stream);
+
+  // Precompute the exact timestamp at which each qualifying run reaches 10h.
+  // The driving counter resets at that moment, not at the end of the run.
+  const resetTimestamps: number[] = runs
+    .filter((run) => run.totalMinutes >= RESET_10H_MINUTES)
+    .map((run) => run.startMs + RESET_10H_MINUTES * 60000)
+    .sort((a, b) => a - b);
+
+  const drivingMaxByDay = new Map<string, number>();
+  let drivingSinceLastReset = 0;
+  let nextResetIdx = 0;
+
+  for (const item of stream) {
+    while (
+      nextResetIdx < resetTimestamps.length &&
+      resetTimestamps[nextResetIdx] <= item.startMs
+    ) {
+      drivingSinceLastReset = 0;
+      nextResetIdx += 1;
+    }
+
+    if (item.event.status === "driving") {
+      drivingSinceLastReset += item.durationMinutes;
+    }
+
+    // Record the day's running max regardless of status so a day with no
+    // driving still reports the carry-over from prior days.
+    drivingMaxByDay.set(
+      item.day,
+      Math.max(drivingMaxByDay.get(item.day) ?? 0, drivingSinceLastReset),
+    );
+  }
+
+  // Boundary pill: the single rest run that strictly contains the midnight
+  // between day N and day N+1, if any.
+  const boundaryRestByDay = new Map<string, number>();
+  for (let i = 0; i < logSheets.length - 1; i += 1) {
+    const sheet = logSheets[i];
+    const nextSheet = logSheets[i + 1];
+    const last = sheet.events[sheet.events.length - 1];
+    const first = nextSheet.events[0];
+    if (!last || !first) {
+      boundaryRestByDay.set(sheet.date, 0);
+      continue;
+    }
+    const lastEndMs = Date.parse(last.end_time);
+    const firstStartMs = Date.parse(first.start_time);
+    // Strict contiguity by timestamp, not by minute-of-day. Also both sides
+    // must be rest statuses; otherwise the "continuous rest across boundary"
+    // is 0 by definition (an on-duty or driving event sits on one side).
+    if (
+      Number.isNaN(lastEndMs) ||
+      Number.isNaN(firstStartMs) ||
+      lastEndMs !== firstStartMs ||
+      !isRestStatus(last.status) ||
+      !isRestStatus(first.status)
+    ) {
+      boundaryRestByDay.set(sheet.date, 0);
+      continue;
+    }
+    const containingRun = runs.find(
+      (run) => run.startMs < lastEndMs && lastEndMs < run.endMs,
+    );
+    boundaryRestByDay.set(sheet.date, containingRun ? containingRun.totalMinutes : 0);
+  }
+
+  return { drivingMaxByDay, boundaryRestByDay };
+}
+
+function restPillClasses(totalRestMinutes: number): string {
+  if (totalRestMinutes >= RESTART_34H_MINUTES) {
+    return "border-green-200 bg-green-50 text-green-700 dark:border-green-500/40 dark:bg-green-500/10 dark:text-green-300";
+  }
+  if (totalRestMinutes >= RESET_10H_MINUTES) {
+    return "border-green-200 bg-green-50 text-green-700 dark:border-green-500/40 dark:bg-green-500/10 dark:text-green-300";
+  }
+  return "border-red-200 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300";
+}
+
 const legendItems: Array<{ status: DutyStatus; label: string }> = [
   { status: "driving", label: "Driving" },
   { status: "on_duty", label: "On-Duty" },
@@ -130,6 +258,11 @@ const legendItems: Array<{ status: DutyStatus; label: string }> = [
 ];
 
 export function TimelineView({ logSheets }: TimelineViewProps) {
+  const { drivingMaxByDay, boundaryRestByDay } = useMemo(
+    () => computeCompliance(logSheets),
+    [logSheets],
+  );
+
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-4 dark:border-gray-700">
@@ -150,9 +283,15 @@ export function TimelineView({ logSheets }: TimelineViewProps) {
       <div className="space-y-6">
         {logSheets.map((sheet, index) => {
           const nextSheet = logSheets[index + 1];
-          const restAcrossBoundary = nextSheet ? boundaryContinuousRestMinutes(sheet, nextSheet) : 0;
-          const restart34Met = restAcrossBoundary >= 34 * 60;
-          const restResetMet = restAcrossBoundary >= 10 * 60;
+          const restAcrossBoundary = boundaryRestByDay.get(sheet.date) ?? 0;
+          const restart34Met = restAcrossBoundary >= RESTART_34H_MINUTES;
+          const restResetMet = restAcrossBoundary >= RESET_10H_MINUTES;
+          const drivingWindowMaxMinutes = drivingMaxByDay.get(sheet.date) ?? 0;
+          // FMCSA §395.3(a)(3)(i): any driving beyond 660 minutes (11h) since
+          // the last 10h reset is a violation — no tolerance.
+          const drivingWindowViolation = drivingWindowMaxMinutes > DOT_11H_MINUTES;
+          const calendarDrivingMinutes = Math.round((sheet.totals.driving ?? 0) * 60);
+          const calendarDrivingExceeds11 = calendarDrivingMinutes > DOT_11H_MINUTES;
 
           return (
             <div key={sheet.date} className="space-y-3">
@@ -180,7 +319,9 @@ export function TimelineView({ logSheets }: TimelineViewProps) {
 
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-700 md:grid-cols-4 dark:text-gray-300">
                   <p>
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">Driving:</span>{" "}
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      Driving (calendar):
+                    </span>{" "}
                     {formatHM(sheet.totals.driving ?? 0)}
                   </p>
                   <p>
@@ -195,10 +336,29 @@ export function TimelineView({ logSheets }: TimelineViewProps) {
                     <span className="font-semibold text-gray-900 dark:text-gray-100">Sleeper:</span>{" "}
                     {formatHM(sheet.totals.sleeper_berth ?? 0)}
                   </p>
+                  <p
+                    className={`col-span-2 md:col-span-4 ${
+                      drivingWindowViolation
+                        ? "text-red-700 dark:text-red-300"
+                        : "text-green-700 dark:text-green-300"
+                    }`}
+                  >
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">
+                      DOT 11h check:
+                    </span>{" "}
+                    {formatHM(drivingWindowMaxMinutes / 60)} since last 10h reset{" "}
+                    {drivingWindowViolation ? "✕" : "✓"}
+                  </p>
+                  {calendarDrivingExceeds11 && !drivingWindowViolation ? (
+                    <p className="col-span-2 md:col-span-4 text-[11px] text-gray-500 dark:text-gray-400">
+                      Calendar driving can exceed 11h when two legal duty windows occur on the same
+                      date after a 10h reset.
+                    </p>
+                  ) : null}
                 </div>
               </article>
 
-              {nextSheet ? (
+              {nextSheet && restAcrossBoundary > 0 ? (
                 <div className="flex justify-center">
                   <div
                     className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${restPillClasses(

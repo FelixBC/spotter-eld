@@ -67,14 +67,14 @@ def needs_driving_reset(state: SimulationState, current_time: datetime) -> bool:
 def apply_qualifying_break(state: SimulationState, consecutive_non_driving_minutes: float) -> SimulationState:
     """Reset the 30-min break counter if break is long enough (Rule 3)."""
     if consecutive_non_driving_minutes >= QUALIFYING_BREAK_MINUTES:
-        state.driving_minutes_since_break = 0
+        state.driving_minutes_since_break = 0.0
     return state
 
 
 def apply_10h_reset(state: SimulationState, reset_end_time: datetime) -> SimulationState:
     """Rule 5: after 10 consecutive hours off, reset daily limits."""
     state.driving_hours_today = 0.0
-    state.driving_minutes_since_break = 0
+    state.driving_minutes_since_break = 0.0
     state.window_start = reset_end_time
     state.window_end = reset_end_time + timedelta(hours=DRIVING_WINDOW_HOURS)
     return state
@@ -84,7 +84,7 @@ def apply_34h_restart(state: SimulationState, restart_end_time: datetime) -> Sim
     """Rule 6: 34-hour restart resets cycle hours and daily limits."""
     state.cycle_hours_used = 0.0
     state.driving_hours_today = 0.0
-    state.driving_minutes_since_break = 0
+    state.driving_minutes_since_break = 0.0
     state.window_start = restart_end_time
     state.window_end = restart_end_time + timedelta(hours=DRIVING_WINDOW_HOURS)
     state.restart_used = True
